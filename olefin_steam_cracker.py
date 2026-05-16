@@ -77,7 +77,18 @@ def large_scale_cracking_model():
     # Manually ensure the primary reaction (Ethane -> Ethylene + H2) exists and is dominant
     reactant_indices[0] = ETHANE_IDX
     product_indices[0] = [ETHYLENE_IDX, HYDROGEN_IDX]
-    k[0] = 3.0e14 * np.exp(-280000 / (R * T_K)) # Actual ethane cracking rate
+    A[0] = 3.0e14
+    Ea[0] = 280000
+    k[0] = A[0] * np.exp(-Ea[0] / (R * T_K)) # Actual ethane cracking rate
+
+    # Export all generated reactions to a CSV file
+    print("Exporting generated kinetic reactions to 'kinetic_reactions.csv'...")
+    with open("kinetic_reactions.csv", "w") as f:
+        f.write("Reaction_ID,Reactant_Index,Product1_Index,Product2_Index,A(s^-1),Ea(J/mol),k(s^-1) at 800C\n")
+        for i in range(num_reactions):
+            p1 = product_indices[i, 0]
+            p2 = product_indices[i, 1] if product_indices[i, 1] != -1 else ""
+            f.write(f"{i},{reactant_indices[i]},{p1},{p2},{A[i]:.4e},{Ea[i]:.2f},{k[i]:.4e}\n")
 
     # -------------------------------------------------------------------------
     # 2. ODE System Definition
