@@ -84,19 +84,18 @@ class RefinerySolver:
         cdu_out = cdu_split(cdu_feed, cuts, recovery_eff=rec_eff)
         unit_results.append(self._pack_unit("CDU", cdu_feed, cdu_out, cdu_node.capacity_mt_h))
 
-        atm_res = cdu_out["atm_residue"]
         naphtha = cdu_out["naphtha"]
-        kero_cut = cdu_out["kerosene"]
-        diesel_cut = cdu_out["diesel"]
-        offgas = cdu_out["offgas_lpg"]
+        cdu_ago = cdu_out["ago"]
+        cdu_bottoms = cdu_out["bottoms"]
 
-        self._to_pool(pool_accum, pool_tags, "lpg", "default", offgas, default_props_for_cut("lpg"))
+        self._to_pool(pool_accum, pool_tags, "lpg", "offgas", cdu_out["offgas"], default_props_for_cut("light_gas"))
+        self._to_pool(pool_accum, pool_tags, "lpg", "lpg", cdu_out["lpg"], default_props_for_cut("lpg"))
         self._to_pool(
             pool_accum,
             pool_tags,
             "kerosene",
             "straight_run",
-            kero_cut,
+            cdu_out["kerosene"],
             default_props_for_cut("kerosene", crude_sulfur),
         )
         self._to_pool(
@@ -104,16 +103,17 @@ class RefinerySolver:
             pool_tags,
             "diesel",
             "straight_run",
-            diesel_cut,
+            cdu_out["diesel"],
             default_props_for_cut("diesel", crude_sulfur),
         )
 
         vgo_for_downstream = empty_stream("vgo_pool")
+        vgo_for_downstream = vgo_for_downstream.add(cdu_ago)
 
         # --- VDU ---
         vdu_node = self._unit_map.get("VDU")
         if vdu_node and vdu_node.enabled:
-            vdu_feed = self._cap_stream(atm_res, vdu_node.capacity_mt_h)
+            vdu_feed = self._cap_stream(cdu_bottoms, vdu_node.capacity_mt_h)
             unit_feed_rates["VDU"] = vdu_feed.total()
             self._run_heater("VDU", vdu_feed.total(), heater_results, heater_sims)
             vgo_y = float(vdu_node.params.get("vgo_yield_wt", 0.55))
@@ -142,13 +142,11 @@ class RefinerySolver:
             vdu_out = vdu_split(vdu_feed, vdu_p)
             unit_results.append(self._pack_unit("VDU", vdu_feed, vdu_out, vdu_node.capacity_mt_h))
             vgo_for_downstream = vgo_for_downstream.add(vdu_out["vgo"])
-            self._to_pool(pool_accum, pool_tags, "lpg", "default", vdu_out["offgas"], default_props_for_cut("light_gas"))
-            vr_feed = vdu_out["vac_residue"]
+            self._to_pool(pool_accum, pool_tags, "lpg", "offgas", vdu_out["offgas"], default_props_for_cut("light_gas"))
+            self._to_pool(pool_accum, pool_tags, "lpg", "vdu_lpg", vdu_out["lpg"], default_props_for_cut("lpg"))
+            vr_feed = vdu_out["bottoms"]
         else:
-            vr_feed = atm_res
-            vgo_for_downstream = vgo_for_downstream.add(
-                Stream.from_dict({"gas_oil": atm_res.total() * 0.3}, "atm_vgo_proxy")
-            )
+            vr_feed = cdu_bottoms
 
         fcc_node = self._unit_map.get("FCC")
         fcc_share = float(fcc_node.params.get("feed_share", 0.55)) if fcc_node else 0.55
@@ -282,7 +280,8 @@ class RefinerySolver:
                 hc_out["naphtha"],
                 default_props_for_cut("naphtha", crude_sulfur * 0.15),
             )
-            self._to_pool(pool_accum, pool_tags, "lpg", "default", hc_out["offgas"], default_props_for_cut("light_gas"))
+            self._to_pool(pool_accum, pool_tags, "lpg", "offgas", hc_out["offgas"], default_props_for_cut("light_gas"))
+            self._to_pool(pool_accum, pool_tags, "lpg", "hc_lpg", hc_out["lpg"], default_props_for_cut("lpg"))
             h2_supply = h2_supply.add(Stream.from_dict({"hydrogen": hc_out["offgas"].flows.get("hydrogen", 0.0)}))
 
         # --- Coker ---
@@ -379,7 +378,8 @@ class RefinerySolver:
                 ccr_out["reformate"],
                 default_props_for_cut("reformate"),
             )
-            self._to_pool(pool_accum, pool_tags, "lpg", "default", ccr_out["offgas"], default_props_for_cut("light_gas"))
+            self._to_pool(pool_accum, pool_tags, "lpg", "offgas", ccr_out["offgas"], default_props_for_cut("light_gas"))
+            self._to_pool(pool_accum, pool_tags, "lpg", "ccr_lpg", ccr_out["lpg"], default_props_for_cut("lpg"))
             h2_supply = h2_supply.add(ccr_out["h2"])
 
         ccr_cap = ccr_node.capacity_mt_h if ccr_node else 0.0

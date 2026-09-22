@@ -41,7 +41,7 @@ PALETTE: List[PaletteEntry] = [
             "riser_outlet_c": 520,
             "cat_oil_ratio": 5.5,
             "riser_pressure_kpa": 230,
-            "preexponential": 2.5,
+            "preexponential": 5.5,
             "activation_kj_mol": 22,
         },
     ),

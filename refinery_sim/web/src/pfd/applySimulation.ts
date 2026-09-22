@@ -4,6 +4,49 @@ import type { EquipmentNodeData, StreamEdgeData } from "./types";
 
 const UNIT_IDS: UnitId[] = ["CDU", "VDU", "FCC", "HYDROCRACKER", "COKER", "CCR"];
 
+/** Map PFD edge id → simulation unit output port name */
+const EDGE_PORT: Record<string, { unit: UnitId; port: string }> = {
+  "e-cdu-offgas": { unit: "CDU", port: "offgas" },
+  "e-cdu-lpg": { unit: "CDU", port: "lpg" },
+  "e-cdu-naphtha": { unit: "CDU", port: "naphtha" },
+  "e-cdu-kero": { unit: "CDU", port: "kerosene" },
+  "e-cdu-diesel": { unit: "CDU", port: "diesel" },
+  "e-cdu-ago-hc": { unit: "CDU", port: "ago" },
+  "e-cdu-ago-fcc": { unit: "CDU", port: "ago" },
+  "e-cdu-bottoms": { unit: "CDU", port: "bottoms" },
+  "e-vdu-offgas": { unit: "VDU", port: "offgas" },
+  "e-vdu-lpg": { unit: "VDU", port: "lpg" },
+  "e-vdu-vgo-fcc": { unit: "VDU", port: "vgo" },
+  "e-vdu-vgo-hc": { unit: "VDU", port: "vgo" },
+  "e-vdu-bottoms": { unit: "VDU", port: "bottoms" },
+  "e-fcc-offgas": { unit: "FCC", port: "offgas" },
+  "e-fcc-lpg": { unit: "FCC", port: "lpg" },
+  "e-fcc-gasoline": { unit: "FCC", port: "gasoline" },
+  "e-fcc-lco": { unit: "FCC", port: "lco" },
+  "e-hc-offgas": { unit: "HYDROCRACKER", port: "offgas" },
+  "e-hc-lpg": { unit: "HYDROCRACKER", port: "lpg" },
+  "e-hc-naphtha": { unit: "HYDROCRACKER", port: "naphtha" },
+  "e-hc-kero": { unit: "HYDROCRACKER", port: "kerosene" },
+  "e-hc-diesel": { unit: "HYDROCRACKER", port: "diesel" },
+  "e-coker-offgas": { unit: "COKER", port: "offgas" },
+  "e-coker-lpg": { unit: "COKER", port: "lpg" },
+  "e-coker-naphtha": { unit: "COKER", port: "naphtha" },
+  "e-coker-lco": { unit: "COKER", port: "lco" },
+  "e-ccr-offgas": { unit: "CCR", port: "offgas" },
+  "e-ccr-lpg": { unit: "CCR", port: "lpg" },
+  "e-ccr-reformate": { unit: "CCR", port: "reformate" },
+};
+
+function portFlow(
+  unitMap: Map<UnitId, SimulationResult["unit_results"][0]>,
+  unit: UnitId,
+  port: string,
+): number | undefined {
+  const ur = unitMap.get(unit);
+  const out = ur?.outputs[port];
+  return out?.total_mt_h;
+}
+
 export function applySimulationToPfd(
   nodes: Node[],
   edges: Edge[],
@@ -19,7 +62,7 @@ export function applySimulationToPfd(
     if (UNIT_IDS.includes(n.id as UnitId)) {
       const ur = unitMap.get(n.id as UnitId);
       if (ur) {
-        d.subtitle = `${ur.feed_mt_h.toFixed(0)} MT/h · ${(ur.utilisation * 100).toFixed(0)}% cap`;
+        d.subtitle = `${ur.feed_mt_h.toFixed(0)} MT/h feed · ${(ur.utilisation * 100).toFixed(0)}% cap`;
       }
       return { ...n, data: d };
     }
@@ -45,6 +88,15 @@ export function applySimulationToPfd(
       return { ...n, data: d };
     }
 
+    if (n.id === "sink_fuel") {
+      const off =
+        (portFlow(unitMap, "CDU", "offgas") ?? 0) +
+        (portFlow(unitMap, "VDU", "offgas") ?? 0) +
+        (portFlow(unitMap, "FCC", "offgas") ?? 0);
+      d.subtitle = `${off.toFixed(0)} MT/h (plant offgas)`;
+      return { ...n, data: d };
+    }
+
     if (n.id === "fcc_riser") {
       const b = result.reactor_blocks.find((x) => x.block_type === "FCC_RISER_REACTOR");
       if (b) {
@@ -56,7 +108,7 @@ export function applySimulationToPfd(
     if (n.id === "fcc_regen") {
       const b = result.reactor_blocks.find((x) => x.block_type === "FCC_REGENERATOR");
       if (b) {
-        d.subtitle = `${(b.metrics.regen_duty_mw ?? 0).toFixed(1)} MW · Flue ${(b.metrics.flue_gas_mt_h ?? 0).toFixed(0)} t/h`;
+        d.subtitle = `${(b.metrics.regen_duty_mw ?? 0).toFixed(1)} MW · flue ${(b.metrics.flue_gas_mt_h ?? 0).toFixed(0)} t/h`;
       }
       return { ...n, data: d };
     }
@@ -85,16 +137,20 @@ export function applySimulationToPfd(
 
   const flowByEdge: Record<string, number> = {
     "e-feed-cdu": crude,
-    "e-cdu-vdu": unitMap.get("VDU")?.feed_mt_h ?? 0,
-    "e-cdu-ccr": unitMap.get("CCR")?.feed_mt_h ?? 0,
-    "e-vdu-riser": unitMap.get("FCC")?.feed_mt_h ?? 0,
-    "e-vdu-hc": unitMap.get("HYDROCRACKER")?.feed_mt_h ?? 0,
-    "e-vdu-coker": unitMap.get("COKER")?.feed_mt_h ?? 0,
-    "e-fcc-gas": result.pools.find((p) => p.pool === "gasoline")?.total_mt_h ?? 0,
-    "e-hc-diesel": unitMap.get("HYDROCRACKER")?.feed_mt_h ?? 0,
-    "e-cdu-kero": result.pools.find((p) => p.pool === "kerosene")?.total_mt_h ?? 0,
-    "e-cdu-diesel": result.pools.find((p) => p.pool === "diesel")?.total_mt_h ?? 0,
   };
+
+  for (const [edgeId, spec] of Object.entries(EDGE_PORT)) {
+    const f = portFlow(unitMap, spec.unit, spec.port);
+    if (f !== undefined) {
+      if (edgeId === "e-cdu-ago-hc" || edgeId === "e-cdu-ago-fcc") {
+        flowByEdge[edgeId] = f * 0.5;
+      } else if (edgeId === "e-vdu-vgo-fcc" || edgeId === "e-vdu-vgo-hc") {
+        flowByEdge[edgeId] = f * 0.5;
+      } else {
+        flowByEdge[edgeId] = f;
+      }
+    }
+  }
 
   const nextEdges = edges.map((e) => {
     const flow = flowByEdge[e.id];

@@ -234,6 +234,7 @@ body {
   position: relative;
   min-width: 100px;
   max-width: 130px;
+  min-height: 88px;
   padding: 4px 8px 8px;
   background: linear-gradient(180deg, #ffffff, #e8ecf2);
   border: 2px solid #607d8b;
@@ -288,6 +289,19 @@ body {
   height: 7px !important;
   background: #fff !important;
   border: 2px solid #37474f !important;
+}
+
+.eq-node-mult {
+  min-height: 200px;
+  min-width: 110px;
+}
+
+.eq-node-mult.port-count-7 {
+  min-height: 260px;
+}
+
+.eq-handle-port {
+  right: -4px !important;
 }
 
 /* Stream edges */

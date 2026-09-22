@@ -18,10 +18,15 @@ class VDUParams:
 
 
 def vdu_split(feed: Stream, p: VDUParams) -> Dict[str, Stream]:
-    """Vacuum distillation of atmospheric residue."""
+    """Vacuum distillation — offgas, lpg (lights), VGO, vacuum bottoms."""
     feed_mass = feed.total()
     if feed_mass <= 0:
-        return {"vgo": empty_stream("vdu_vgo"), "vac_residue": empty_stream("vdu_vr"), "offgas": empty_stream("vdu_gas")}
+        return {
+            "offgas": empty_stream("vdu_offgas"),
+            "lpg": empty_stream("vdu_lpg"),
+            "vgo": empty_stream("vdu_vgo"),
+            "bottoms": empty_stream("vdu_bottoms"),
+        }
 
     total_y = p.vgo_yield_wt + p.vr_yield_wt + p.gas_yield_wt
     vgo_f = p.vgo_yield_wt / total_y
@@ -29,10 +34,10 @@ def vdu_split(feed: Stream, p: VDUParams) -> Dict[str, Stream]:
     gas_f = p.gas_yield_wt / total_y
 
     vgo = Stream(name="vdu_vgo")
-    vr = Stream(name="vdu_vr")
+    vr = Stream(name="vdu_bottoms")
     gas = Stream(name="vdu_offgas")
+    lpg = Stream(name="vdu_lpg")
 
-    # VGO rich in gas_oil; VR is vac_residue character.
     for c, m in feed.flows.items():
         if c in ("coke", "hydrogen") or m <= 0:
             continue
@@ -40,11 +45,11 @@ def vdu_split(feed: Stream, p: VDUParams) -> Dict[str, Stream]:
         vgo.flows[c] += m * vgo_f * (0.85 if c not in ("gas_oil", "vac_residue") else 0.0)
         vr.flows["vac_residue"] += m * vr_f * (1.0 if c in ("vac_residue", "gas_oil") else 0.2)
         vr.flows[c] += m * vr_f * (0.8 if c == "diesel" else 0.0)
-        gas.flows["light_gas"] += m * gas_f * 0.7
-        gas.flows["lpg"] += m * gas_f * 0.3
+        gas.flows["light_gas"] += m * gas_f * 0.55
+        lpg.flows["lpg"] += m * gas_f * 0.45
 
-    _close_balance(feed_mass, [vgo, vr, gas])
-    return {"vgo": vgo, "vac_residue": vr, "offgas": gas}
+    _close_balance(feed_mass, [vgo, vr, gas, lpg])
+    return {"offgas": gas, "lpg": lpg, "vgo": vgo, "bottoms": vr}
 
 
 @dataclass
@@ -110,10 +115,12 @@ def hydrocracker(feed: Stream, p: HydrocrackerParams) -> Dict[str, Stream]:
     feed_mass = feed.flows.get("gas_oil", 0.0) + 0.25 * feed.total()
     if feed_mass <= 0:
         return {
+            "offgas": empty_stream("hc_offgas"),
+            "lpg": empty_stream("hc_lpg"),
             "naphtha": empty_stream("hc_naphtha"),
             "kerosene": empty_stream("hc_kero"),
             "diesel": empty_stream("hc_diesel"),
-            "offgas": empty_stream("hc_offgas"),
+            "unconverted": empty_stream("hc_uco"),
         }
 
     conv = max(0.1, min(0.98, p.conversion_wt))
@@ -140,8 +147,21 @@ def hydrocracker(feed: Stream, p: HydrocrackerParams) -> Dict[str, Stream]:
     diesel.flows["diesel"] += h2_added * 0.6
     kero.flows["kerosene"] += h2_added * 0.4
 
-    _close_balance(feed_mass + h2_added, [naphtha, kero, diesel, gas], ignore_h2=True)
-    return {"naphtha": naphtha, "kerosene": kero, "diesel": diesel, "offgas": gas}
+    lpg = Stream(name="hc_lpg")
+    lpg.flows["lpg"] = gas.flows.get("lpg", 0.0)
+    gas.flows["lpg"] = 0.0
+    unconverted = Stream(name="hc_uco")
+    unconverted.flows["gas_oil"] = feed_mass * (1.0 - conv) * 0.85
+
+    _close_balance(feed_mass + h2_added, [naphtha, kero, diesel, gas, lpg, unconverted], ignore_h2=True)
+    return {
+        "offgas": gas,
+        "lpg": lpg,
+        "naphtha": naphtha,
+        "kerosene": kero,
+        "diesel": diesel,
+        "unconverted": unconverted,
+    }
 
 
 @dataclass
@@ -199,7 +219,12 @@ def ccr_reformer(feed: Stream, p: CCRParams) -> Dict[str, Stream]:
     """Continuous catalytic reforming — dehydrocyclization / isomerization."""
     feed_mass = feed.flows.get("naphtha", 0.0) + 0.1 * feed.flows.get("light_gas", 0.0)
     if feed_mass <= 0:
-        return {"reformate": empty_stream("ccr_reformate"), "offgas": empty_stream("ccr_offgas"), "h2": empty_stream("ccr_h2")}
+        return {
+            "offgas": empty_stream("ccr_offgas"),
+            "lpg": empty_stream("ccr_lpg"),
+            "reformate": empty_stream("ccr_reformate"),
+            "h2": empty_stream("ccr_h2"),
+        }
 
     ref_y = p.reformate_yield_wt
     gas_y = 1.0 - ref_y - p.h2_yield_wt
@@ -214,8 +239,12 @@ def ccr_reformer(feed: Stream, p: CCRParams) -> Dict[str, Stream]:
     offgas.flows["lpg"] = feed_mass * gas_y * 0.3
     h2.flows["hydrogen"] = feed_mass * p.h2_yield_wt
 
-    _close_balance(feed_mass, [reformate, offgas, h2], ignore_h2=True)
-    return {"reformate": reformate, "offgas": offgas, "h2": h2}
+    lpg = Stream(name="ccr_lpg")
+    lpg.flows["lpg"] = offgas.flows.get("lpg", 0.0)
+    offgas.flows["lpg"] = 0.0
+
+    _close_balance(feed_mass, [reformate, offgas, lpg, h2], ignore_h2=True)
+    return {"offgas": offgas, "lpg": lpg, "reformate": reformate, "h2": h2}
 
 
 def _close_balance(feed_mass: float, products: list[Stream], ignore_h2: bool = False) -> None:

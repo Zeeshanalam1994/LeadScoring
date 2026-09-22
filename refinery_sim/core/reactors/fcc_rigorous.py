@@ -31,7 +31,7 @@ class FCCRigorousResult:
 
 def _riser_conversion(temp_c: float, cat_oil: float, p: Dict[str, float]) -> float:
     """First-order riser cracking: X = 1 - exp(-k); k from Arrhenius and cat/oil."""
-    a = float(p.get("preexponential", 2.5))
+    a = float(p.get("preexponential", 5.5))
     ea = float(p.get("activation_kj_mol", 22.0))
     t_k = temp_c + 273.15
     k = a * (cat_oil / 5.5) * math.exp(-ea / (R_GAS * t_k))
