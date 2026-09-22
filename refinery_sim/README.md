@@ -38,7 +38,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173 — adjust unit toggles, capacities, and key parameters; the flowsheet updates utilisation after each solve.
+Open http://localhost:5173 — **HYSYS-style PFD**: equipment symbols, labeled streams with flows, object palette, workbook properties, stream table, energy pane, and status bar. Adjust feeds/units/reactors in the workbook; click **▶ Solve** or edit inputs for automatic re-solve.
 
 ## Tests
 
