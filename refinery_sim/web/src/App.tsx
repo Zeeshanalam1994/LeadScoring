@@ -1,15 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ReactFlow,
-  Background,
-  Controls,
-  MiniMap,
-  useNodesState,
-  useEdgesState,
-  type Node,
-  type Edge,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ReactFlowProvider, useReactFlow, useNodesState, useEdgesState } from "@xyflow/react";
 import {
   Bar,
   BarChart,
@@ -19,6 +9,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { PfdCanvas } from "./components/PfdCanvas";
+import { ObjectPalette } from "./components/ObjectPalette";
+import { StreamTable } from "./components/StreamTable";
+import { applySimulationToPfd } from "./pfd/applySimulation";
+import { buildInitialPfd } from "./pfd/buildPfd";
 import type { HeaterConfig, RefineryConfig, SimulationResult, UnitId, UnitNode } from "./types";
 
 const UNIT_LABELS: Record<UnitId, string> = {
@@ -44,166 +39,56 @@ const UNIT_PARAM_HINTS: Partial<
   CCR: [{ key: "reformate_yield_wt", label: "Reformate yield", min: 0.7, max: 0.9, step: 0.01 }],
 };
 
-type LeftTab = "feeders" | "units" | "reactors" | "heaters" | "blenders";
+type ConfigTab = "feeders" | "units" | "reactors" | "heaters" | "blenders";
+type BottomTab = "streams" | "energy" | "results";
 
-const initialNodes: Node[] = [
-  { id: "feeder", position: { x: -40, y: 170 }, data: { label: "Crude feeder\n(blend)" }, type: "input" },
-  { id: "CDU", position: { x: 140, y: 150 }, data: { label: "CDU" } },
-  { id: "h_CDU", position: { x: 140, y: 230 }, data: { label: "🔥 Crude furnace" }, style: { fontSize: 10 } },
-  { id: "VDU", position: { x: 320, y: 50 }, data: { label: "VDU" } },
-  { id: "h_VDU", position: { x: 320, y: 130 }, data: { label: "🔥 Vac heater" }, style: { fontSize: 10 } },
-  { id: "fcc_riser", position: { x: 460, y: -30 }, data: { label: "FCC riser" } },
-  { id: "fcc_regen", position: { x: 460, y: 50 }, data: { label: "FCC regenerator" } },
-  { id: "FCC", position: { x: 580, y: 10 }, data: { label: "FCC system" } },
-  { id: "HYDROCRACKER", position: { x: 500, y: 110 }, data: { label: "Hydrocracker" } },
-  { id: "COKER", position: { x: 500, y: 230 }, data: { label: "Delayed Coker" } },
-  { id: "CCR", position: { x: 320, y: 280 }, data: { label: "CCR" } },
-  { id: "pool_lpg", position: { x: 700, y: 10 }, data: { label: "LPG Pool" }, className: "pool-node" },
-  { id: "pool_gasoline", position: { x: 700, y: 90 }, data: { label: "Gasoline Pool" }, className: "pool-node" },
-  { id: "blend_gas", position: { x: 880, y: 90 }, data: { label: "Gasoline blender" }, className: "pool-node" },
-  { id: "pool_kerosene", position: { x: 700, y: 170 }, data: { label: "Kerosene Pool" }, className: "pool-node" },
-  { id: "pool_diesel", position: { x: 700, y: 250 }, data: { label: "Diesel Pool" }, className: "pool-node" },
-  { id: "blend_diesel", position: { x: 880, y: 250 }, data: { label: "ULSD blender" }, className: "pool-node" },
-];
+const { nodes: initialNodes, edges: initialEdges } = buildInitialPfd();
 
-const initialEdges: Edge[] = [
-  { id: "e-feed-cdu", source: "feeder", target: "CDU", animated: true },
-  { id: "e-cdu-h", source: "CDU", target: "h_CDU", style: { strokeDasharray: "4 4" } },
-  { id: "e-cdu-vdu", source: "CDU", target: "VDU" },
-  { id: "e-vdu-h", source: "VDU", target: "h_VDU", style: { strokeDasharray: "4 4" } },
-  { id: "e-cdu-ccr", source: "CDU", target: "CCR" },
-  { id: "e-vdu-riser", source: "VDU", target: "fcc_riser" },
-  { id: "e-riser-regen", source: "fcc_riser", target: "fcc_regen", animated: true },
-  { id: "e-riser-fcc", source: "fcc_riser", target: "FCC" },
-  { id: "e-regen-fcc", source: "fcc_regen", target: "FCC", style: { strokeDasharray: "5 3" } },
-  { id: "e-vdu-hc", source: "VDU", target: "HYDROCRACKER" },
-  { id: "e-vdu-coker", source: "VDU", target: "COKER" },
-  { id: "e-fcc-gas", source: "FCC", target: "pool_gasoline" },
-  { id: "e-gas-blend", source: "pool_gasoline", target: "blend_gas" },
-  { id: "e-die-blend", source: "pool_diesel", target: "blend_diesel" },
-  { id: "e-hc-diesel", source: "HYDROCRACKER", target: "pool_diesel" },
-  { id: "e-hc-kero", source: "HYDROCRACKER", target: "pool_kerosene" },
-  { id: "e-ccr-gas", source: "CCR", target: "pool_gasoline" },
-  { id: "e-cdu-kero", source: "CDU", target: "pool_kerosene" },
-  { id: "e-cdu-diesel", source: "CDU", target: "pool_diesel" },
-];
-
-function App() {
+function SimulationWorkspace() {
+  const { setCenter } = useReactFlow();
   const [config, setConfig] = useState<RefineryConfig | null>(null);
   const [result, setResult] = useState<SimulationResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [leftTab, setLeftTab] = useState<LeftTab>("feeders");
+  const [configTab, setConfigTab] = useState<ConfigTab>("units");
+  const [bottomTab, setBottomTab] = useState<BottomTab>("streams");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>("CDU");
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  nodesRef.current = nodes;
+  edgesRef.current = edges;
 
   const loadDefault = useCallback(async () => {
     const res = await fetch("/api/config/default");
-    const data = (await res.json()) as RefineryConfig;
-    setConfig(data);
+    setConfig((await res.json()) as RefineryConfig);
   }, []);
 
   const runSimulation = useCallback(async () => {
     if (!config) return;
     setLoading(true);
     setError(null);
+    setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, status: "solving" } })));
     try {
       const res = await fetch("/api/simulate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
       });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || res.statusText);
-      }
+      if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as SimulationResult;
       setResult(data);
-      setNodes((nds) =>
-        nds.map((n) => {
-          const ur = data.unit_results.find((u) => u.unit === n.id);
-          if (ur) {
-            const util = Math.round(ur.utilisation * 100);
-            return {
-              ...n,
-              data: {
-                ...n.data,
-                label: `${UNIT_LABELS[n.id as UnitId]}\n${ur.feed_mt_h.toFixed(0)} MT/h (${util}%)`,
-              },
-            };
-          }
-          const hr = data.heaters.find((h) => `h_${h.unit_id}` === n.id);
-          if (hr) {
-            return {
-              ...n,
-              data: { ...n.data, label: `🔥 ${hr.name}\n${hr.duty_mw.toFixed(1)} MW` },
-            };
-          }
-          if (n.id === "blend_gas" && data.blenders[0]) {
-            const b = data.blenders.find((x) => x.blender_id === "bgas") ?? data.blenders[0];
-            return {
-              ...n,
-              data: {
-                ...n.data,
-                label: `${b.name}\n${b.rate_mt_h.toFixed(0)} MT/h ${b.specs_met ? "✓" : "✗"}`,
-              },
-            };
-          }
-          if (n.id === "blend_diesel") {
-            const b = data.blenders.find((x) => x.blender_id === "bdiesel");
-            if (b) {
-              return {
-                ...n,
-                data: {
-                  ...n.data,
-                  label: `${b.name}\n${b.rate_mt_h.toFixed(0)} MT/h ${b.specs_met ? "✓" : "✗"}`,
-                },
-              };
-            }
-          }
-          if (n.id === "fcc_riser") {
-            const b = data.reactor_blocks.find((x) => x.block_type === "FCC_RISER_REACTOR");
-            if (b) {
-              return {
-                ...n,
-                data: {
-                  ...n.data,
-                  label: `Riser\nconv ${(b.metrics.conversion_wt * 100).toFixed(0)}% · ${(b.metrics.riser_duty_mw ?? 0).toFixed(1)} MW`,
-                },
-              };
-            }
-          }
-          if (n.id === "fcc_regen") {
-            const b = data.reactor_blocks.find((x) => x.block_type === "FCC_REGENERATOR");
-            if (b) {
-              return {
-                ...n,
-                data: {
-                  ...n.data,
-                  label: `Regenerator\n${(b.metrics.regen_duty_mw ?? 0).toFixed(1)} MW · flue ${(b.metrics.flue_gas_mt_h ?? 0).toFixed(0)} t/h`,
-                },
-              };
-            }
-          }
-          if (n.id === "feeder" && data.feeders[0]) {
-            const f = data.feeders[0];
-            return {
-              ...n,
-              data: {
-                ...n.data,
-                label: `Crude blend\n${f.total_rate_mt_h.toFixed(0)} MT/h · ${f.blended_api.toFixed(1)}°API`,
-              },
-            };
-          }
-          return n;
-        }),
-      );
+      const updated = applySimulationToPfd(nodesRef.current, edgesRef.current, data);
+      setNodes(updated.nodes);
+      setEdges(updated.edges);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Simulation failed");
+      setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, status: "warn" } })));
     } finally {
       setLoading(false);
     }
-  }, [config, setNodes]);
+  }, [config, setNodes, setEdges]);
 
   useEffect(() => {
     loadDefault();
@@ -218,12 +103,16 @@ function App() {
     [result],
   );
 
+  const focusNode = (id: string) => {
+    const node = nodes.find((n) => n.id === id);
+    if (!node) return;
+    setSelectedNodeId(id);
+    setCenter(node.position.x + 55, node.position.y + 45, { zoom: 1.05, duration: 350 });
+  };
+
   const updateUnit = (id: UnitId, patch: Partial<UnitNode>) => {
     if (!config) return;
-    setConfig({
-      ...config,
-      units: config.units.map((u) => (u.id === id ? { ...u, ...patch } : u)),
-    });
+    setConfig({ ...config, units: config.units.map((u) => (u.id === id ? { ...u, ...patch } : u)) });
   };
 
   const updateUnitParam = (id: UnitId, key: string, value: number) => {
@@ -255,379 +144,250 @@ function App() {
   };
 
   if (!config) {
-    return <div className="app panel">Loading configuration…</div>;
+    return <div className="hysys-app" style={{ padding: 24 }}>Loading simulation case…</div>;
   }
 
+  const mb = result?.mass_balance_error_pct ?? 0;
+  const converged = mb < 12;
+
   return (
-    <div className="app">
-      <header>
-        <div>
-          <h1>Refinery Configuration Simulator</h1>
-          <p>Crude blends · heaters · product blenders · energy & emissions</p>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" className="btn btn-secondary" onClick={loadDefault}>
-            Reset
-          </button>
-          <button type="button" className="btn btn-primary" onClick={runSimulation} disabled={loading}>
-            {loading ? "Solving…" : "Run simulation"}
-          </button>
-        </div>
-      </header>
+    <div className="hysys-app">
+      <div className="hysys-menubar">
+        <span className="brand">RefinerySim</span>
+        <span className="menu-item">File</span>
+        <span className="menu-item">Edit</span>
+        <span className="menu-item">Flowsheets</span>
+        <span className="menu-item">Simulation</span>
+        <span className="menu-item">Tools</span>
+        <span className="spacer" />
+        <span className="case-name">Case: Refinery_Main.hsc</span>
+      </div>
 
-      <aside className="panel">
-        <div className="tabs">
-          {(["feeders", "units", "reactors", "heaters", "blenders"] as LeftTab[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              className={`tab ${leftTab === t ? "active" : ""}`}
-              onClick={() => setLeftTab(t)}
-            >
-              {t}
-            </button>
-          ))}
+      <div className="hysys-toolbar">
+        <div className="tb-group">
+          <button type="button" className="btn btn-run" onClick={runSimulation} disabled={loading}>
+            {loading ? "Solving…" : "▶ Solve"}
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={loadDefault}>Reset</button>
+        </div>
+        <div className="tb-group">
+          <button type="button" className="btn btn-secondary" onClick={() => focusNode("CDU")}>PFD</button>
+          <button type="button" className="btn btn-secondary" onClick={() => setBottomTab("streams")}>Streams</button>
+        </div>
+        {error && <span className="error">{error}</span>}
+      </div>
+
+      <div className="hysys-body">
+        <ObjectPalette selectedNodeId={selectedNodeId} onFocus={focusNode} />
+
+        <div className="hysys-center">
+          <PfdCanvas
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onSelectNode={setSelectedNodeId}
+            solving={loading}
+          />
         </div>
 
-        {leftTab === "feeders" && (
-          <>
-            <h2>Crude assays & feeders</h2>
-            {config.assays.map((a) => (
-              <div key={a.id} className="unit-card">
-                <h3>{a.name}</h3>
-                <div className="metric">API {a.api} · S {a.sulfur_wt_pct}%</div>
-              </div>
+        <aside className="hysys-workbook">
+          <div className="workbook-header">Workbook — Properties</div>
+          <div className="props-tree">
+            Selected: <span className="sel">{selectedNodeId ?? "—"}</span>
+          </div>
+          <div className="workbook-tabs">
+            {(["feeders", "units", "reactors", "heaters", "blenders"] as ConfigTab[]).map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={configTab === t ? "active" : ""}
+                onClick={() => setConfigTab(t)}
+              >
+                {t}
+              </button>
             ))}
-            {config.feeders.map((f, fi) => (
-              <div key={f.id} className="unit-card">
-                <header>
-                  <h3>{f.name}</h3>
+          </div>
+          <div className="workbook-content">
+            {configTab === "feeders" && (
+              <>
+                {config.feeders.map((f, fi) => (
+                  <div key={f.id} className="unit-card">
+                    <h3>{f.name}</h3>
+                    {f.components.map((c, ci) => (
+                      <div className="field" key={`${c.assay_id}-${ci}`}>
+                        <label>{config.assays.find((a) => a.id === c.assay_id)?.name ?? c.assay_id}</label>
+                        <input
+                          type="number"
+                          value={c.rate_mt_h}
+                          onChange={(e) => updateFeederComponent(fi, ci, Number(e.target.value))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                <div className="field">
+                  <label>Flare fraction</label>
+                  <input
+                    type="number"
+                    step={0.005}
+                    value={config.flare_fraction}
+                    onChange={(e) => setConfig({ ...config, flare_fraction: Number(e.target.value) })}
+                  />
+                </div>
+              </>
+            )}
+            {configTab === "units" &&
+              config.units.map((unit) => (
+                <div key={unit.id} className="unit-card">
+                  <h3>{UNIT_LABELS[unit.id]}</h3>
                   <label>
                     <input
                       type="checkbox"
-                      checked={f.enabled}
-                      onChange={(e) => {
-                        const feeders = config.feeders.map((x, i) =>
-                          i === fi ? { ...x, enabled: e.target.checked } : x,
-                        );
-                        setConfig({ ...config, feeders });
-                      }}
+                      checked={unit.enabled}
+                      onChange={(e) => updateUnit(unit.id, { enabled: e.target.checked })}
                     />
-                    On
+                    Active
                   </label>
-                </header>
-                {f.components.map((c, ci) => {
-                  const assay = config.assays.find((a) => a.id === c.assay_id);
-                  return (
-                    <div className="field" key={`${c.assay_id}-${ci}`}>
-                      <label>{assay?.name ?? c.assay_id} (MT/h)</label>
-                      <input
-                        type="number"
-                        value={c.rate_mt_h}
-                        onChange={(e) => updateFeederComponent(fi, ci, Number(e.target.value))}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-            <div className="field">
-              <label>Flare fraction (LPG offgas)</label>
-              <input
-                type="number"
-                step={0.005}
-                value={config.flare_fraction}
-                onChange={(e) => setConfig({ ...config, flare_fraction: Number(e.target.value) })}
-              />
-            </div>
-          </>
-        )}
-
-        {leftTab === "reactors" && (
-          <>
-            <h2>Rigorous reactor palette</h2>
-            <div className="field">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={config.use_rigorous_reactors}
-                  onChange={(e) => setConfig({ ...config, use_rigorous_reactors: e.target.checked })}
-                />
-                Use rigorous reactor models
-              </label>
-            </div>
-            {config.reactor_blocks.map((block) => (
-              <div key={block.id} className="unit-card">
-                <header>
-                  <h3>{block.name}</h3>
-                  <label>
+                  <div className="field">
+                    <label>Capacity MT/h</label>
                     <input
-                      type="checkbox"
-                      checked={block.enabled}
-                      onChange={(e) => {
-                        setConfig({
-                          ...config,
-                          reactor_blocks: config.reactor_blocks.map((b) =>
-                            b.id === block.id ? { ...b, enabled: e.target.checked } : b,
-                          ),
-                        });
-                      }}
+                      type="number"
+                      value={unit.capacity_mt_h}
+                      onChange={(e) => updateUnit(unit.id, { capacity_mt_h: Number(e.target.value) })}
                     />
-                    On
-                  </label>
-                </header>
-                <div className="metric">{block.host_unit} · {block.block_type}</div>
-                {Object.entries(block.params)
-                  .slice(0, 4)
-                  .map(([k, v]) => (
-                    <div className="field" key={k}>
-                      <label>{k}</label>
+                  </div>
+                  {(UNIT_PARAM_HINTS[unit.id] ?? []).map((p) => (
+                    <div className="field" key={p.key}>
+                      <label>{p.label}</label>
                       <input
                         type="number"
-                        value={v}
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          setConfig({
-                            ...config,
-                            reactor_blocks: config.reactor_blocks.map((b) =>
-                              b.id === block.id
-                                ? { ...b, params: { ...b.params, [k]: val } }
-                                : b,
-                            ),
-                          });
-                        }}
+                        value={unit.params[p.key] ?? p.min}
+                        onChange={(e) => updateUnitParam(unit.id, p.key, Number(e.target.value))}
                       />
                     </div>
                   ))}
-              </div>
-            ))}
-          </>
-        )}
-
-        {leftTab === "units" &&
-          config.units.map((unit) => (
-            <div key={unit.id} className="unit-card">
-              <header>
-                <h3>{UNIT_LABELS[unit.id]}</h3>
+                </div>
+              ))}
+            {configTab === "reactors" && (
+              <>
                 <label>
                   <input
                     type="checkbox"
-                    checked={unit.enabled}
-                    onChange={(e) => updateUnit(unit.id, { enabled: e.target.checked })}
+                    checked={config.use_rigorous_reactors}
+                    onChange={(e) => setConfig({ ...config, use_rigorous_reactors: e.target.checked })}
                   />
-                  On
+                  Rigorous reactor models
                 </label>
-              </header>
-              <div className="field">
-                <label>Capacity (MT/h)</label>
-                <input
-                  type="number"
-                  value={unit.capacity_mt_h}
-                  onChange={(e) => updateUnit(unit.id, { capacity_mt_h: Number(e.target.value) })}
-                />
-              </div>
-              <div className="params">
-                {(UNIT_PARAM_HINTS[unit.id] ?? []).map((p) => (
-                  <div className="field" key={p.key}>
-                    <label>{p.label}</label>
-                    <input
-                      type="number"
-                      min={p.min}
-                      max={p.max}
-                      step={p.step}
-                      value={unit.params[p.key] ?? p.min}
-                      onChange={(e) => updateUnitParam(unit.id, p.key, Number(e.target.value))}
-                    />
+                {config.reactor_blocks.slice(0, 8).map((block) => (
+                  <div key={block.id} className="unit-card">
+                    <h3>{block.name}</h3>
+                    <div className="metric">{block.host_unit}</div>
                   </div>
                 ))}
-              </div>
-            </div>
-          ))}
-
-        {leftTab === "heaters" &&
-          config.heaters.map((h) => (
-            <div key={h.id} className="unit-card">
-              <header>
-                <h3>{h.name}</h3>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={h.enabled}
-                    onChange={(e) => updateHeater(h.id, { enabled: e.target.checked })}
-                  />
-                  On
-                </label>
-              </header>
-              <div className="metric">Unit: {UNIT_LABELS[h.unit_id]}</div>
-              <div className="field">
-                <label>Inlet °C</label>
-                <input
-                  type="number"
-                  value={h.inlet_c}
-                  onChange={(e) => updateHeater(h.id, { inlet_c: Number(e.target.value) })}
-                />
-              </div>
-              <div className="field">
-                <label>Outlet °C</label>
-                <input
-                  type="number"
-                  value={h.outlet_c}
-                  onChange={(e) => updateHeater(h.id, { outlet_c: Number(e.target.value) })}
-                />
-              </div>
-              <div className="field">
-                <label>Thermal efficiency</label>
-                <input
-                  type="number"
-                  step={0.01}
-                  value={h.thermal_efficiency}
-                  onChange={(e) => updateHeater(h.id, { thermal_efficiency: Number(e.target.value) })}
-                />
-              </div>
-            </div>
-          ))}
-
-        {leftTab === "blenders" &&
-          config.blenders.map((b) => (
-            <div key={b.id} className="unit-card">
-              <header>
-                <h3>{b.name}</h3>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={b.enabled}
-                    onChange={(e) => {
-                      setConfig({
-                        ...config,
-                        blenders: config.blenders.map((x) =>
-                          x.id === b.id ? { ...x, enabled: e.target.checked } : x,
-                        ),
-                      });
-                    }}
-                  />
-                  On
-                </label>
-              </header>
-              <div className="metric">Product: {b.product}</div>
-              {b.sources.map((s, i) => (
-                <div className="metric" key={i}>
-                  {s.pool}/{s.tag}: {(s.fraction_of_pool * 100).toFixed(0)}% of tag
-                </div>
-              ))}
-              <div className="metric">
-                Spec: RON≥{b.specs.min_ron ?? "—"} · S≤{b.specs.max_sulfur_wt_pct ?? "—"}% · Cetane≥
-                {b.specs.min_cetane ?? "—"}
-              </div>
-            </div>
-          ))}
-      </aside>
-
-      <main className="panel flow-wrap">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          fitView
-        >
-          <Background gap={16} color="#2a3a5c" />
-          <MiniMap />
-          <Controls />
-        </ReactFlow>
-      </main>
-
-      <aside className="panel">
-        <h2>Products & environment</h2>
-        {error && <p className="error">{error}</p>}
-        {result && (
-          <>
-            <div className="metric">
-              Mass balance error: <strong>{result.mass_balance_error_pct.toFixed(2)}%</strong>
-            </div>
-            {result.pools.map((p) => (
-              <div key={p.pool} className="metric">
-                {p.pool}: <strong>{p.total_mt_h.toFixed(1)} MT/h</strong>
-                {p.properties.ron ? ` · RON~${p.properties.ron.toFixed(0)}` : ""}
-                {p.properties.cetane ? ` · CN~${p.properties.cetane.toFixed(0)}` : ""}
-              </div>
-            ))}
-            <h2 style={{ marginTop: 12 }}>Finished blends</h2>
-            {result.blenders.map((b) => (
-              <div key={b.blender_id} className="metric">
-                {b.name}: <strong>{b.rate_mt_h.toFixed(1)} MT/h</strong>
-                <span className={b.specs_met ? "ok" : "error"}> {b.specs_met ? "in spec" : "off spec"}</span>
-                {!b.specs_met && b.violations.length > 0 && (
-                  <div className="error" style={{ fontSize: "0.75rem" }}>{b.violations.join("; ")}</div>
-                )}
-              </div>
-            ))}
-            <h2 style={{ marginTop: 12 }}>Rigorous reactors</h2>
-            {result.reactor_blocks
-              .filter((b) => b.block_type.includes("FCC"))
-              .map((b) => (
-                <div key={b.id} className="metric" style={{ fontSize: "0.78rem" }}>
-                  {b.name}:{" "}
-                  <strong>
-                    {Object.entries(b.metrics)
-                      .slice(0, 2)
-                      .map(([k, v]) => `${k}=${typeof v === "number" ? v.toFixed(2) : v}`)
-                      .join(", ")}
-                  </strong>
-                </div>
-              ))}
-            <h2 style={{ marginTop: 12 }}>Energy & steam</h2>
-            {result.energy && (
-              <>
-                <div className="metric">
-                  Fired duty: <strong>{result.energy.total_duty_mw.toFixed(1)} MW</strong>
-                </div>
-                <div className="metric">
-                  Fuel: <strong>{result.energy.total_fuel_mt_h.toFixed(1)} MT/h</strong>
-                </div>
-                <div className="metric">
-                  Steam gen / cons / net:{" "}
-                  <strong>
-                    {result.energy.steam_generated_mt_h.toFixed(1)} / {result.energy.steam_consumed_mt_h.toFixed(1)} /{" "}
-                    {result.energy.net_steam_mt_h.toFixed(1)} MT/h
-                  </strong>
-                </div>
-                <div className="metric">
-                  Specific energy: <strong>{result.energy.specific_energy_gj_per_mt_crude.toFixed(2)} GJ/MT crude</strong>
-                </div>
               </>
             )}
-            <h2 style={{ marginTop: 12 }}>Emissions</h2>
-            {result.emissions && (
-              <>
-                <div className="metric">
-                  CO₂ total: <strong>{result.emissions.co2_total_mt_h.toFixed(1)} MT/h</strong> (fuel{" "}
-                  {result.emissions.co2_fuel_mt_h.toFixed(1)} + flare {result.emissions.co2_flare_mt_h.toFixed(2)})
+            {configTab === "heaters" &&
+              config.heaters.map((h) => (
+                <div key={h.id} className="unit-card">
+                  <h3>{h.name}</h3>
+                  <div className="field">
+                    <label>Inlet °C</label>
+                    <input
+                      type="number"
+                      value={h.inlet_c}
+                      onChange={(e) => updateHeater(h.id, { inlet_c: Number(e.target.value) })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Outlet °C</label>
+                    <input
+                      type="number"
+                      value={h.outlet_c}
+                      onChange={(e) => updateHeater(h.id, { outlet_c: Number(e.target.value) })}
+                    />
+                  </div>
                 </div>
-                <div className="metric">
-                  SO₂: <strong>{result.emissions.so2_kg_h.toFixed(0)} kg/h</strong> · NOₓ:{" "}
-                  <strong>{result.emissions.nox_kg_h.toFixed(0)} kg/h</strong>
+              ))}
+            {configTab === "blenders" &&
+              config.blenders.map((b) => (
+                <div key={b.id} className="unit-card">
+                  <h3>{b.name}</h3>
+                  <div className="metric">{b.product} pool</div>
                 </div>
-                <div className="metric">
-                  CO₂ intensity: <strong>{result.emissions.co2_specific_kg_per_mt_crude.toFixed(0)} kg/MT crude</strong>
-                </div>
-              </>
-            )}
-            <div className="chart-box" style={{ marginTop: 8 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2a3a5c" />
-                  <XAxis dataKey="name" stroke="#9fb0d0" tick={{ fontSize: 11 }} />
-                  <YAxis stroke="#9fb0d0" tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Bar dataKey="mt_h" fill="#3dd6c6" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              ))}
+          </div>
+        </aside>
+      </div>
+
+      <div className="hysys-bottom">
+        <div className="bottom-tabs">
+          {(["streams", "energy", "results"] as BottomTab[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={bottomTab === t ? "active" : ""}
+              onClick={() => setBottomTab(t)}
+            >
+              {t === "streams" ? "Stream Table" : t === "energy" ? "Energy / Emissions" : "Material Balance"}
+            </button>
+          ))}
+        </div>
+        <div className="bottom-pane">
+          {bottomTab === "streams" && <StreamTable edges={edges} />}
+          {bottomTab === "energy" && result && (
+            <div style={{ display: "flex", gap: 24 }}>
+              <div>
+                <div className="metric">Duty: <strong>{result.energy?.total_duty_mw.toFixed(1)} MW</strong></div>
+                <div className="metric">Fuel: <strong>{result.energy?.total_fuel_mt_h.toFixed(1)} MT/h</strong></div>
+                <div className="metric">Net steam: <strong>{result.energy?.net_steam_mt_h.toFixed(1)} MT/h</strong></div>
+              </div>
+              <div>
+                <div className="metric">CO₂: <strong>{result.emissions?.co2_total_mt_h.toFixed(1)} MT/h</strong></div>
+                <div className="metric">NOₓ: <strong>{result.emissions?.nox_kg_h.toFixed(0)} kg/h</strong></div>
+              </div>
+              <div className="chart-box" style={{ width: 280 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip />
+                    <Bar dataKey="mt_h" fill="#0066cc" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </>
-        )}
-      </aside>
+          )}
+          {bottomTab === "results" && result && (
+            <>
+              <div className="metric">Mass balance error: <strong>{mb.toFixed(2)}%</strong></div>
+              {result.pools.map((p) => (
+                <div key={p.pool} className="metric">
+                  {p.pool}: <strong>{p.total_mt_h.toFixed(1)} MT/h</strong>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="hysys-statusbar">
+        <span className={converged ? "ok" : "warn"}>
+          {converged ? "● Converged" : "● Review balance"}
+        </span>
+        <span>Crude: {result ? String(result.diagnostics.crude_mt_h) : "—"} MT/h</span>
+        <span>Rigorous: {config.use_rigorous_reactors ? "ON" : "OFF"}</span>
+        <span>MB: {result ? mb.toFixed(2) : "—"}%</span>
+      </div>
     </div>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <ReactFlowProvider>
+      <SimulationWorkspace />
+    </ReactFlowProvider>
+  );
+}
