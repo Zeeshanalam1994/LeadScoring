@@ -9,7 +9,11 @@ Interactive, first-principles **material-balance** simulator for a typical conve
 - **Delayed coker**
 - **CCR** (continuous catalytic reforming)
 
-Product streams are aggregated into **LPG**, **kerosene**, **diesel**, and **gasoline** pools.
+Product streams are aggregated into **LPG**, **kerosene**, **diesel**, and **gasoline** pools, then **product blenders** check finished-product specs (RON, cetane, sulfur).
+
+**Crude feeders** blend multiple assays (Arab Medium, Light Sweet, Heavy Sour, etc.) before the CDU.
+
+**Fired heaters** are modelled on each major unit (Q = ṁ Cp ΔT, fuel from LHV and efficiency). Plant **steam** generation/consumption and **emissions** (CO₂ from fuel + flare, SO₂, NOₓ) are reported.
 
 ## Model basis
 

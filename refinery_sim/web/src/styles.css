@@ -186,3 +186,33 @@ header p {
   color: #ff8b8b;
   font-size: 0.85rem;
 }
+
+.ok {
+  color: #3dd6c6;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.tab {
+  flex: 1;
+  min-width: 70px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0d1524;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.72rem;
+  text-transform: capitalize;
+}
+
+.tab.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: #152238;
+}
