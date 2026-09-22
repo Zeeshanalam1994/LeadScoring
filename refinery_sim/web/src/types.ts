@@ -55,15 +55,26 @@ export interface UnitNode {
   params: Record<string, number>;
 }
 
+export interface ReactorBlock {
+  id: string;
+  block_type: string;
+  name: string;
+  host_unit: UnitId;
+  enabled: boolean;
+  params: Record<string, number>;
+}
+
 export interface RefineryConfig {
   crude_rate_mt_h: number;
   crude_api: number;
   crude_sulfur_wt_pct: number;
   flare_fraction: number;
+  use_rigorous_reactors: boolean;
   assays: AssayRecord[];
   feeders: CrudeFeeder[];
   heaters: HeaterConfig[];
   blenders: ProductBlender[];
+  reactor_blocks: ReactorBlock[];
   units: UnitNode[];
   routes: unknown[];
 }
@@ -128,5 +139,13 @@ export interface SimulationResult {
     nox_kg_h: number;
     co2_specific_kg_per_mt_crude: number;
   };
+  reactor_blocks: {
+    id: string;
+    block_type: string;
+    host_unit: UnitId;
+    name: string;
+    metrics: Record<string, number>;
+    diagnostics: Record<string, unknown>;
+  }[];
   diagnostics: Record<string, unknown>;
 }

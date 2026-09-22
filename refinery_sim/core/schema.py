@@ -8,6 +8,32 @@ from pydantic import BaseModel, Field, model_validator
 
 UnitId = Literal["CDU", "VDU", "FCC", "HYDROCRACKER", "COKER", "CCR"]
 PoolId = Literal["lpg", "kerosene", "diesel", "gasoline"]
+ReactorBlockType = Literal[
+    "CDU_ATM_COLUMN",
+    "VDU_FLASH_TRAIN",
+    "FCC_RISER_REACTOR",
+    "FCC_REGENERATOR",
+    "FCC_FRACTIONATOR",
+    "HC_TRICKLE_BED",
+    "HC_HIGH_PRESSURE_SEPARATOR",
+    "COKER_FURNACE",
+    "COKER_DRUM",
+    "CCR_REACTOR_TRAIN",
+    "CCR_STABILIZER",
+    "HYDROTREATER_FIXED_BED",
+    "ISOMERIZATION_REACTOR",
+    "ALKYLATION_REACTOR",
+    "DELAYED_COKER_DECOKING",
+]
+
+
+class ReactorBlock(BaseModel):
+    id: str
+    block_type: ReactorBlockType
+    name: str
+    host_unit: UnitId
+    enabled: bool = True
+    params: Dict[str, float] = Field(default_factory=dict)
 
 
 class AssayRecord(BaseModel):
@@ -91,6 +117,8 @@ class RefineryConfig(BaseModel):
     blenders: List[ProductBlender] = Field(default_factory=list)
     heaters: List[HeaterConfig] = Field(default_factory=list)
     flare_fraction: float = Field(0.02, ge=0.0, le=0.2)
+    use_rigorous_reactors: bool = True
+    reactor_blocks: List[ReactorBlock] = Field(default_factory=list)
     units: List[UnitNode] = Field(default_factory=list)
     routes: List[StreamRoute] = Field(default_factory=list)
 
@@ -163,6 +191,24 @@ class RefineryConfig(BaseModel):
                     specs=BlenderSpecModel(min_cetane=51.0, max_sulfur_wt_pct=0.001),
                 ),
             ]
+        if not self.reactor_blocks:
+            from refinery_sim.core.reactor_palette import default_blocks_for_host, palette_by_type
+
+            catalog = palette_by_type()
+            blocks: List[ReactorBlock] = []
+            for host in ("CDU", "VDU", "FCC", "HYDROCRACKER", "COKER", "CCR"):
+                for block_type, block_id in default_blocks_for_host(host):
+                    entry = catalog[block_type]
+                    blocks.append(
+                        ReactorBlock(
+                            id=block_id,
+                            block_type=block_type,
+                            name=entry.display_name,
+                            host_unit=host,
+                            params=dict(entry.default_params),
+                        )
+                    )
+            self.reactor_blocks = blocks
         return self
 
     @staticmethod
@@ -256,6 +302,15 @@ class EmissionsResultModel(BaseModel):
     co2_specific_kg_per_mt_crude: float
 
 
+class ReactorBlockResult(BaseModel):
+    id: str
+    block_type: ReactorBlockType
+    host_unit: UnitId
+    name: str
+    metrics: Dict[str, float] = Field(default_factory=dict)
+    diagnostics: Dict[str, Any] = Field(default_factory=dict)
+
+
 class SimulationResult(BaseModel):
     mass_balance_error_pct: float
     unit_results: List[UnitResult]
@@ -263,6 +318,7 @@ class SimulationResult(BaseModel):
     feeders: List[FeederResultModel] = Field(default_factory=list)
     blenders: List[BlenderResultModel] = Field(default_factory=list)
     heaters: List[HeaterResultModel] = Field(default_factory=list)
+    reactor_blocks: List[ReactorBlockResult] = Field(default_factory=list)
     energy: Optional[EnergyResultModel] = None
     emissions: Optional[EmissionsResultModel] = None
     diagnostics: Dict[str, Any] = Field(default_factory=dict)

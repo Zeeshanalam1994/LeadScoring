@@ -9,6 +9,9 @@ Interactive, first-principles **material-balance** simulator for a typical conve
 - **Delayed coker**
 - **CCR** (continuous catalytic reforming)
 
+### Rigorous reactor palette
+Configurable reactor blocks per unit, including **FCC riser + regenerator** (kinetic riser, coke combustion / air / flue gas / heat balance), hydrocracker trickle-bed + HP separator, CCR reactor train + stabilizer, coker furnace + drum, CDU column and VDU flash train anchors, plus hydrotreater / isom / alkylation entries in the palette.
+
 Product streams are aggregated into **LPG**, **kerosene**, **diesel**, and **gasoline** pools, then **product blenders** check finished-product specs (RON, cetane, sulfur).
 
 **Crude feeders** blend multiple assays (Arab Medium, Light Sweet, Heavy Sour, etc.) before the CDU.

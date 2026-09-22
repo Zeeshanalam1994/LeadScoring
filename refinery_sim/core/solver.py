@@ -11,6 +11,7 @@ from .energy_emissions import aggregate_emissions, aggregate_energy
 from .feeders import assay_from_record, build_crude_charge
 from .heaters import HeaterModel, HeaterResult, simulate_heater
 from .properties import PoolAccumulator, default_props_for_cut, blend_properties
+from .reactors import ccr_rigorous_train, coker_rigorous_train, fcc_rigorous_train, hc_rigorous_train
 from .schema import (
     BlenderResultModel,
     EmissionsResultModel,
@@ -19,6 +20,7 @@ from .schema import (
     FeederResultModel,
     HeaterResultModel,
     PoolResult,
+    ReactorBlockResult,
     RefineryConfig,
     SimulationResult,
     StreamResult,
@@ -51,6 +53,8 @@ class RefinerySolver:
         heater_results: List[HeaterResultModel] = []
         heater_sims: List[HeaterResult] = []
         unit_feed_rates: Dict[UnitId, float] = {}
+        reactor_block_results: List[ReactorBlockResult] = []
+        extra_process_co2_mt_h = 0.0
         warnings: List[str] = []
 
         pool_accum: Dict[str, Stream] = {p: empty_stream(f"pool_{p}") for p in PRODUCT_POOLS}
@@ -67,6 +71,16 @@ class RefinerySolver:
 
         cuts = CDUCutPoints()
         rec_eff = float(cdu_node.params.get("recovery_eff", 0.995))
+        col_block = self._find_block("CDU", "CDU_ATM_COLUMN")
+        if col_block and self.config.use_rigorous_reactors:
+            stages = float(col_block.params.get("theoretical_stages", 24))
+            rec_eff = min(0.999, rec_eff * (0.96 + stages / 500.0))
+            self._append_block_result(
+                reactor_block_results,
+                col_block,
+                {"recovery_eff": rec_eff, "theoretical_stages": stages},
+                {"reflux_ratio": col_block.params.get("reflux_ratio", 2.5)},
+            )
         cdu_out = cdu_split(cdu_feed, cuts, recovery_eff=rec_eff)
         unit_results.append(self._pack_unit("CDU", cdu_feed, cdu_out, cdu_node.capacity_mt_h))
 
@@ -102,10 +116,29 @@ class RefinerySolver:
             vdu_feed = self._cap_stream(atm_res, vdu_node.capacity_mt_h)
             unit_feed_rates["VDU"] = vdu_feed.total()
             self._run_heater("VDU", vdu_feed.total(), heater_results, heater_sims)
-            vdu_p = VDUParams(
-                vgo_yield_wt=float(vdu_node.params.get("vgo_yield_wt", 0.55)),
-                vr_yield_wt=float(vdu_node.params.get("vr_yield_wt", 0.43)),
-            )
+            vgo_y = float(vdu_node.params.get("vgo_yield_wt", 0.55))
+            vr_y = float(vdu_node.params.get("vr_yield_wt", 0.43))
+            flash_block = self._find_block("VDU", "VDU_FLASH_TRAIN")
+            if flash_block and self.config.use_rigorous_reactors:
+                vgo_y = float(flash_block.params.get("draw_vgo_frac", vgo_y))
+                vr_y = max(0.05, 1.0 - vgo_y - 0.02)
+                self._append_block_result(
+                    reactor_block_results,
+                    flash_block,
+                    {"vgo_yield_wt": vgo_y, "flash_pressure_kpa": flash_block.params.get("flash_pressure_kpa", 5)},
+                    {"stages": flash_block.params.get("stages", 14)},
+                )
+            hdt_block = self._find_block("VDU", "HYDROTREATER_FIXED_BED")
+            if hdt_block and self.config.use_rigorous_reactors:
+                desulf = float(hdt_block.params.get("desulfurization_frac", 0.9))
+                crude_sulfur *= max(0.05, 1.0 - 0.15 * desulf)
+                self._append_block_result(
+                    reactor_block_results,
+                    hdt_block,
+                    {"desulfurization_frac": desulf},
+                    {"reactor_temp_c": hdt_block.params.get("temp_c", 370)},
+                )
+            vdu_p = VDUParams(vgo_yield_wt=vgo_y, vr_yield_wt=vr_y)
             vdu_out = vdu_split(vdu_feed, vdu_p)
             unit_results.append(self._pack_unit("VDU", vdu_feed, vdu_out, vdu_node.capacity_mt_h))
             vgo_for_downstream = vgo_for_downstream.add(vdu_out["vgo"])
@@ -127,11 +160,53 @@ class RefinerySolver:
             fcc_feed_c = self._cap_stream(fcc_feed, fcc_node.capacity_mt_h)
             unit_feed_rates["FCC"] = fcc_feed_c.total()
             self._run_heater("FCC", fcc_feed_c.total(), heater_results, heater_sims)
-            fcc_p = FCCParams(
-                conversion_wt=float(fcc_node.params.get("conversion_wt", 0.75)),
-                coke_make_wt=float(fcc_node.params.get("coke_make_wt", 0.06)),
-            )
-            fcc_out = fcc_reactor(fcc_feed_c, fcc_p)
+            riser_block = self._find_block("FCC", "FCC_RISER_REACTOR")
+            regen_block = self._find_block("FCC", "FCC_REGENERATOR")
+            frac_block = self._find_block("FCC", "FCC_FRACTIONATOR")
+            if self.config.use_rigorous_reactors and riser_block and regen_block:
+                fcc_res = fcc_rigorous_train(
+                    fcc_feed_c,
+                    riser_block.params,
+                    regen_block.params,
+                    frac_block.params if frac_block else None,
+                )
+                fcc_out = {k: v for k, v in fcc_res.products.items() if k != "flue_gas"}
+                extra_process_co2_mt_h += fcc_res.flue_gas_mt_h * 0.85
+                self._append_block_result(
+                    reactor_block_results,
+                    riser_block,
+                    {
+                        "conversion_wt": fcc_res.conversion_wt,
+                        "riser_duty_mw": fcc_res.riser_duty_mw,
+                        "coke_to_regen_mt_h": fcc_res.coke_to_regen_mt_h,
+                    },
+                    fcc_res.diagnostics,
+                )
+                self._append_block_result(
+                    reactor_block_results,
+                    regen_block,
+                    {
+                        "regen_duty_mw": fcc_res.regen_duty_mw,
+                        "air_rate_mt_h": fcc_res.air_rate_mt_h,
+                        "flue_gas_mt_h": fcc_res.flue_gas_mt_h,
+                        "heat_balance_error_mw": fcc_res.heat_balance_error_mw,
+                        "cat_circulation_mt_h": fcc_res.cat_circulation_mt_h,
+                    },
+                    {"regen_dense_bed_c": regen_block.params.get("regen_dense_bed_c", 715)},
+                )
+                if frac_block:
+                    self._append_block_result(
+                        reactor_block_results,
+                        frac_block,
+                        {"gasoline_draw_frac": float(frac_block.params.get("gasoline_draw_frac", 0.48))},
+                        {"stages": frac_block.params.get("stages", 35)},
+                    )
+            else:
+                fcc_p = FCCParams(
+                    conversion_wt=float(fcc_node.params.get("conversion_wt", 0.75)),
+                    coke_make_wt=float(fcc_node.params.get("coke_make_wt", 0.06)),
+                )
+                fcc_out = fcc_reactor(fcc_feed_c, fcc_p)
             unit_results.append(self._pack_unit("FCC", fcc_feed_c, fcc_out, fcc_node.capacity_mt_h))
             self._to_pool(pool_accum, pool_tags, "lpg", "fcc", fcc_out["lpg"], default_props_for_cut("lpg"))
             self._to_pool(pool_accum, pool_tags, "lpg", "default", fcc_out["offgas"], default_props_for_cut("light_gas"))
@@ -159,11 +234,29 @@ class RefinerySolver:
             hc_feed_c = self._cap_stream(hc_feed, hc_node.capacity_mt_h)
             unit_feed_rates["HYDROCRACKER"] = hc_feed_c.total()
             self._run_heater("HYDROCRACKER", hc_feed_c.total(), heater_results, heater_sims)
-            hc_p = HydrocrackerParams(
-                conversion_wt=float(hc_node.params.get("conversion_wt", 0.85)),
-                h2_consumption_wt=float(hc_node.params.get("h2_consumption_wt", 0.025)),
-            )
-            hc_out = hydrocracker(hc_feed_c, hc_p)
+            rx_block = self._find_block("HYDROCRACKER", "HC_TRICKLE_BED")
+            sep_block = self._find_block("HYDROCRACKER", "HC_HIGH_PRESSURE_SEPARATOR")
+            if self.config.use_rigorous_reactors and rx_block and sep_block:
+                hc_res = hc_rigorous_train(hc_feed_c, rx_block.params, sep_block.params)
+                hc_out = hc_res.products
+                self._append_block_result(
+                    reactor_block_results,
+                    rx_block,
+                    {"conversion_wt": hc_res.conversion_wt, "reactor_duty_mw": hc_res.reactor_duty_mw},
+                    {"h2_partial_pressure_mpa": hc_res.h2_partial_pressure_mpa},
+                )
+                self._append_block_result(
+                    reactor_block_results,
+                    sep_block,
+                    {"separator_temp_c": float(sep_block.params.get("separator_temp_c", 85))},
+                    hc_res.diagnostics,
+                )
+            else:
+                hc_p = HydrocrackerParams(
+                    conversion_wt=float(hc_node.params.get("conversion_wt", 0.85)),
+                    h2_consumption_wt=float(hc_node.params.get("h2_consumption_wt", 0.025)),
+                )
+                hc_out = hydrocracker(hc_feed_c, hc_p)
             unit_results.append(self._pack_unit("HYDROCRACKER", hc_feed_c, hc_out, hc_node.capacity_mt_h))
             self._to_pool(
                 pool_accum,
@@ -198,8 +291,39 @@ class RefinerySolver:
             coker_feed_c = self._cap_stream(vr_feed, coker_node.capacity_mt_h)
             unit_feed_rates["COKER"] = coker_feed_c.total()
             self._run_heater("COKER", coker_feed_c.total(), heater_results, heater_sims)
-            coker_p = CokerParams(coke_yield_wt=float(coker_node.params.get("coke_yield_wt", 0.28)))
-            coker_out = delayed_coker(coker_feed_c, coker_p)
+            furn_block = self._find_block("COKER", "COKER_FURNACE")
+            drum_block = self._find_block("COKER", "COKER_DRUM")
+            decoke_block = self._find_block("COKER", "DELAYED_COKER_DECOKING")
+            if self.config.use_rigorous_reactors and furn_block and drum_block:
+                coker_res = coker_rigorous_train(
+                    coker_feed_c,
+                    furn_block.params,
+                    drum_block.params,
+                    decoke_block.params if decoke_block else None,
+                )
+                coker_out = coker_res.products
+                self._append_block_result(
+                    reactor_block_results,
+                    furn_block,
+                    {"furnace_duty_mw": coker_res.furnace_duty_mw},
+                    coker_res.diagnostics,
+                )
+                self._append_block_result(
+                    reactor_block_results,
+                    drum_block,
+                    {"coke_in_drum_mt_h": coker_res.coke_in_drum_mt_h},
+                    {"drum_pressure_kpa": drum_block.params.get("drum_pressure_kpa", 35)},
+                )
+                if decoke_block:
+                    self._append_block_result(
+                        reactor_block_results,
+                        decoke_block,
+                        {"steam_mt_per_cycle": float(decoke_block.params.get("steam_mt_per_cycle", 120))},
+                        {},
+                    )
+            else:
+                coker_p = CokerParams(coke_yield_wt=float(coker_node.params.get("coke_yield_wt", 0.28)))
+                coker_out = delayed_coker(coker_feed_c, coker_p)
             unit_results.append(self._pack_unit("COKER", coker_feed_c, coker_out, coker_node.capacity_mt_h))
             self._to_pool(pool_accum, pool_tags, "lpg", "coker", coker_out["lpg"], default_props_for_cut("lpg"))
             self._to_pool(pool_accum, pool_tags, "lpg", "default", coker_out["offgas"], default_props_for_cut("light_gas"))
@@ -226,8 +350,26 @@ class RefinerySolver:
             ccr_feed_c = self._cap_stream(naphtha, ccr_node.capacity_mt_h)
             unit_feed_rates["CCR"] = ccr_feed_c.total()
             self._run_heater("CCR", ccr_feed_c.total(), heater_results, heater_sims)
-            ccr_p = CCRParams(reformate_yield_wt=float(ccr_node.params.get("reformate_yield_wt", 0.82)))
-            ccr_out = ccr_reformer(ccr_feed_c, ccr_p)
+            rx_block = self._find_block("CCR", "CCR_REACTOR_TRAIN")
+            stab_block = self._find_block("CCR", "CCR_STABILIZER")
+            if self.config.use_rigorous_reactors and rx_block and stab_block:
+                ccr_res = ccr_rigorous_train(ccr_feed_c, rx_block.params, stab_block.params)
+                ccr_out = ccr_res.products
+                self._append_block_result(
+                    reactor_block_results,
+                    rx_block,
+                    {"wabt_c": ccr_res.wabt_c, "h2_yield_wt": ccr_res.h2_yield_wt},
+                    ccr_res.diagnostics,
+                )
+                self._append_block_result(
+                    reactor_block_results,
+                    stab_block,
+                    {"overhead_frac": float(stab_block.params.get("overhead_frac", 0.05))},
+                    {},
+                )
+            else:
+                ccr_p = CCRParams(reformate_yield_wt=float(ccr_node.params.get("reformate_yield_wt", 0.82)))
+                ccr_out = ccr_reformer(ccr_feed_c, ccr_p)
             unit_results.append(self._pack_unit("CCR", ccr_feed_c, ccr_out, ccr_node.capacity_mt_h))
             self._to_pool(
                 pool_accum,
@@ -268,6 +410,17 @@ class RefinerySolver:
         flare_gas = pool_accum["lpg"].flows.get("light_gas", 0.0) * self.config.flare_fraction
         energy = aggregate_energy(heater_sims, unit_feed_rates, total_in)
         emissions = aggregate_emissions(heater_sims, flare_gas, total_in)
+        if extra_process_co2_mt_h > 0:
+            emissions = EmissionsResultModel(
+                co2_fuel_mt_h=emissions.co2_fuel_mt_h,
+                co2_flare_mt_h=emissions.co2_flare_mt_h,
+                co2_total_mt_h=emissions.co2_total_mt_h + extra_process_co2_mt_h,
+                so2_kg_h=emissions.so2_kg_h,
+                nox_kg_h=emissions.nox_kg_h,
+                co2_specific_kg_per_mt_crude=(
+                    (emissions.co2_total_mt_h + extra_process_co2_mt_h) * 1000.0 / max(total_in, 1e-6)
+                ),
+            )
 
         return SimulationResult(
             mass_balance_error_pct=mb_error,
@@ -287,6 +440,7 @@ class RefinerySolver:
                 for b in blender_results
             ],
             heaters=heater_results,
+            reactor_blocks=reactor_block_results,
             energy=EnergyResultModel(
                 total_duty_mw=energy.total_duty_mw,
                 total_fuel_mt_h=energy.total_fuel_mt_h,
@@ -310,7 +464,33 @@ class RefinerySolver:
                 "h2_net_mt_h": h2_supply.flows.get("hydrogen", 0.0),
                 "flare_gas_mt_h": flare_gas,
                 "warnings": warnings,
+                "rigorous_reactors": self.config.use_rigorous_reactors,
+                "fcc_process_co2_mt_h": extra_process_co2_mt_h,
             },
+        )
+
+    def _find_block(self, host: UnitId, block_type: str):
+        for block in self.config.reactor_blocks:
+            if block.enabled and block.host_unit == host and block.block_type == block_type:
+                return block
+        return None
+
+    @staticmethod
+    def _append_block_result(
+        results: List[ReactorBlockResult],
+        block,
+        metrics: Dict[str, float],
+        diagnostics: Dict,
+    ) -> None:
+        results.append(
+            ReactorBlockResult(
+                id=block.id,
+                block_type=block.block_type,
+                host_unit=block.host_unit,
+                name=block.name,
+                metrics=metrics,
+                diagnostics=diagnostics,
+            )
         )
 
     def _build_crude_feed(self) -> Tuple[Stream, List[FeederResultModel], float]:

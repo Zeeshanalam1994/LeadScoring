@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
+from refinery_sim.core.reactor_palette import PALETTE
 from refinery_sim.core.schema import RefineryConfig, SimulationResult
 from refinery_sim.core.solver import RefinerySolver
 
@@ -31,6 +32,20 @@ def health() -> dict:
 @app.get("/api/config/default", response_model=RefineryConfig)
 def default_config() -> RefineryConfig:
     return RefineryConfig.default_config()
+
+
+@app.get("/api/reactor-palette")
+def reactor_palette() -> list:
+    return [
+        {
+            "block_type": e.block_type,
+            "display_name": e.display_name,
+            "host_unit": e.host_unit,
+            "description": e.description,
+            "default_params": e.default_params,
+        }
+        for e in PALETTE
+    ]
 
 
 @app.post("/api/simulate", response_model=SimulationResult)

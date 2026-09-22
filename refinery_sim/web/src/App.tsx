@@ -44,7 +44,7 @@ const UNIT_PARAM_HINTS: Partial<
   CCR: [{ key: "reformate_yield_wt", label: "Reformate yield", min: 0.7, max: 0.9, step: 0.01 }],
 };
 
-type LeftTab = "feeders" | "units" | "heaters" | "blenders";
+type LeftTab = "feeders" | "units" | "reactors" | "heaters" | "blenders";
 
 const initialNodes: Node[] = [
   { id: "feeder", position: { x: -40, y: 170 }, data: { label: "Crude feeder\n(blend)" }, type: "input" },
@@ -52,7 +52,9 @@ const initialNodes: Node[] = [
   { id: "h_CDU", position: { x: 140, y: 230 }, data: { label: "🔥 Crude furnace" }, style: { fontSize: 10 } },
   { id: "VDU", position: { x: 320, y: 50 }, data: { label: "VDU" } },
   { id: "h_VDU", position: { x: 320, y: 130 }, data: { label: "🔥 Vac heater" }, style: { fontSize: 10 } },
-  { id: "FCC", position: { x: 500, y: -10 }, data: { label: "FCC" } },
+  { id: "fcc_riser", position: { x: 460, y: -30 }, data: { label: "FCC riser" } },
+  { id: "fcc_regen", position: { x: 460, y: 50 }, data: { label: "FCC regenerator" } },
+  { id: "FCC", position: { x: 580, y: 10 }, data: { label: "FCC system" } },
   { id: "HYDROCRACKER", position: { x: 500, y: 110 }, data: { label: "Hydrocracker" } },
   { id: "COKER", position: { x: 500, y: 230 }, data: { label: "Delayed Coker" } },
   { id: "CCR", position: { x: 320, y: 280 }, data: { label: "CCR" } },
@@ -70,7 +72,10 @@ const initialEdges: Edge[] = [
   { id: "e-cdu-vdu", source: "CDU", target: "VDU" },
   { id: "e-vdu-h", source: "VDU", target: "h_VDU", style: { strokeDasharray: "4 4" } },
   { id: "e-cdu-ccr", source: "CDU", target: "CCR" },
-  { id: "e-vdu-fcc", source: "VDU", target: "FCC" },
+  { id: "e-vdu-riser", source: "VDU", target: "fcc_riser" },
+  { id: "e-riser-regen", source: "fcc_riser", target: "fcc_regen", animated: true },
+  { id: "e-riser-fcc", source: "fcc_riser", target: "FCC" },
+  { id: "e-regen-fcc", source: "fcc_regen", target: "FCC", style: { strokeDasharray: "5 3" } },
   { id: "e-vdu-hc", source: "VDU", target: "HYDROCRACKER" },
   { id: "e-vdu-coker", source: "VDU", target: "COKER" },
   { id: "e-fcc-gas", source: "FCC", target: "pool_gasoline" },
@@ -152,6 +157,30 @@ function App() {
                 data: {
                   ...n.data,
                   label: `${b.name}\n${b.rate_mt_h.toFixed(0)} MT/h ${b.specs_met ? "✓" : "✗"}`,
+                },
+              };
+            }
+          }
+          if (n.id === "fcc_riser") {
+            const b = data.reactor_blocks.find((x) => x.block_type === "FCC_RISER_REACTOR");
+            if (b) {
+              return {
+                ...n,
+                data: {
+                  ...n.data,
+                  label: `Riser\nconv ${(b.metrics.conversion_wt * 100).toFixed(0)}% · ${(b.metrics.riser_duty_mw ?? 0).toFixed(1)} MW`,
+                },
+              };
+            }
+          }
+          if (n.id === "fcc_regen") {
+            const b = data.reactor_blocks.find((x) => x.block_type === "FCC_REGENERATOR");
+            if (b) {
+              return {
+                ...n,
+                data: {
+                  ...n.data,
+                  label: `Regenerator\n${(b.metrics.regen_duty_mw ?? 0).toFixed(1)} MW · flue ${(b.metrics.flue_gas_mt_h ?? 0).toFixed(0)} t/h`,
                 },
               };
             }
@@ -248,7 +277,7 @@ function App() {
 
       <aside className="panel">
         <div className="tabs">
-          {(["feeders", "units", "heaters", "blenders"] as LeftTab[]).map((t) => (
+          {(["feeders", "units", "reactors", "heaters", "blenders"] as LeftTab[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -311,6 +340,67 @@ function App() {
                 onChange={(e) => setConfig({ ...config, flare_fraction: Number(e.target.value) })}
               />
             </div>
+          </>
+        )}
+
+        {leftTab === "reactors" && (
+          <>
+            <h2>Rigorous reactor palette</h2>
+            <div className="field">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={config.use_rigorous_reactors}
+                  onChange={(e) => setConfig({ ...config, use_rigorous_reactors: e.target.checked })}
+                />
+                Use rigorous reactor models
+              </label>
+            </div>
+            {config.reactor_blocks.map((block) => (
+              <div key={block.id} className="unit-card">
+                <header>
+                  <h3>{block.name}</h3>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={block.enabled}
+                      onChange={(e) => {
+                        setConfig({
+                          ...config,
+                          reactor_blocks: config.reactor_blocks.map((b) =>
+                            b.id === block.id ? { ...b, enabled: e.target.checked } : b,
+                          ),
+                        });
+                      }}
+                    />
+                    On
+                  </label>
+                </header>
+                <div className="metric">{block.host_unit} · {block.block_type}</div>
+                {Object.entries(block.params)
+                  .slice(0, 4)
+                  .map(([k, v]) => (
+                    <div className="field" key={k}>
+                      <label>{k}</label>
+                      <input
+                        type="number"
+                        value={v}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setConfig({
+                            ...config,
+                            reactor_blocks: config.reactor_blocks.map((b) =>
+                              b.id === block.id
+                                ? { ...b, params: { ...b.params, [k]: val } }
+                                : b,
+                            ),
+                          });
+                        }}
+                      />
+                    </div>
+                  ))}
+              </div>
+            ))}
           </>
         )}
 
@@ -471,6 +561,20 @@ function App() {
                 )}
               </div>
             ))}
+            <h2 style={{ marginTop: 12 }}>Rigorous reactors</h2>
+            {result.reactor_blocks
+              .filter((b) => b.block_type.includes("FCC"))
+              .map((b) => (
+                <div key={b.id} className="metric" style={{ fontSize: "0.78rem" }}>
+                  {b.name}:{" "}
+                  <strong>
+                    {Object.entries(b.metrics)
+                      .slice(0, 2)
+                      .map(([k, v]) => `${k}=${typeof v === "number" ? v.toFixed(2) : v}`)
+                      .join(", ")}
+                  </strong>
+                </div>
+              ))}
             <h2 style={{ marginTop: 12 }}>Energy & steam</h2>
             {result.energy && (
               <>
