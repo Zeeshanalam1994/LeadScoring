@@ -52,8 +52,13 @@ export function applySimulationToPfd(
   edges: Edge[],
   result: SimulationResult,
 ): { nodes: Node[]; edges: Edge[] } {
-  const unitMap = new Map(result.unit_results.map((u) => [u.unit, u]));
-  const crude = Number(result.diagnostics.crude_mt_h ?? 0);
+  const unitMap = new Map((result.unit_results ?? []).map((u) => [u.unit, u]));
+  const crude = Number(result.diagnostics?.crude_mt_h ?? 0);
+  const heaters = result.heaters ?? [];
+  const reactorBlocks = result.reactor_blocks ?? [];
+  const blenders = result.blenders ?? [];
+  const pools = result.pools ?? [];
+  const feeders = result.feeders ?? [];
 
   const nextNodes = nodes.map((n) => {
     const d = { ...(n.data as EquipmentNodeData) };
@@ -76,14 +81,14 @@ export function applySimulationToPfd(
       return { ...n, data: d };
     }
 
-    const hr = result.heaters.find((h) => `h_${h.unit_id}` === n.id);
+    const hr = heaters.find((h) => `h_${h.unit_id}` === n.id);
     if (hr) {
       d.subtitle = `${hr.duty_mw.toFixed(1)} MW fired`;
       return { ...n, data: d };
     }
 
-    if (n.id === "feeder" && result.feeders[0]) {
-      const f = result.feeders[0];
+    if (n.id === "feeder" && feeders[0]) {
+      const f = feeders[0];
       d.subtitle = `${f.total_rate_mt_h.toFixed(0)} MT/h · ${f.blended_api.toFixed(1)}° API`;
       return { ...n, data: d };
     }
@@ -98,7 +103,7 @@ export function applySimulationToPfd(
     }
 
     if (n.id === "fcc_riser") {
-      const b = result.reactor_blocks.find((x) => x.block_type === "FCC_RISER_REACTOR");
+      const b = reactorBlocks.find((x) => x.block_type === "FCC_RISER_REACTOR");
       if (b) {
         d.subtitle = `Conv ${((b.metrics.conversion_wt ?? 0) * 100).toFixed(0)}% · ${(b.metrics.riser_duty_mw ?? 0).toFixed(1)} MW`;
       }
@@ -106,7 +111,7 @@ export function applySimulationToPfd(
     }
 
     if (n.id === "fcc_regen") {
-      const b = result.reactor_blocks.find((x) => x.block_type === "FCC_REGENERATOR");
+      const b = reactorBlocks.find((x) => x.block_type === "FCC_REGENERATOR");
       if (b) {
         d.subtitle = `${(b.metrics.regen_duty_mw ?? 0).toFixed(1)} MW · flue ${(b.metrics.flue_gas_mt_h ?? 0).toFixed(0)} t/h`;
       }
@@ -114,20 +119,20 @@ export function applySimulationToPfd(
     }
 
     if (n.id === "blend_gas") {
-      const b = result.blenders.find((x) => x.blender_id === "bgas");
+      const b = blenders.find((x) => x.blender_id === "bgas");
       if (b) d.subtitle = `${b.rate_mt_h.toFixed(0)} MT/h ${b.specs_met ? "✓ Spec" : "✗ Off spec"}`;
       return { ...n, data: d };
     }
 
     if (n.id === "blend_diesel") {
-      const b = result.blenders.find((x) => x.blender_id === "bdiesel");
+      const b = blenders.find((x) => x.blender_id === "bdiesel");
       if (b) d.subtitle = `${b.rate_mt_h.toFixed(0)} MT/h ${b.specs_met ? "✓ Spec" : "✗ Off spec"}`;
       return { ...n, data: d };
     }
 
     if (n.id.startsWith("pool_")) {
       const pool = n.id.replace("pool_", "");
-      const p = result.pools.find((x) => x.pool === pool);
+      const p = pools.find((x) => x.pool === pool);
       if (p) d.subtitle = `${p.total_mt_h.toFixed(0)} MT/h inventory`;
       return { ...n, data: d };
     }
