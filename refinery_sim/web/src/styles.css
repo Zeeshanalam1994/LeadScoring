@@ -1,0 +1,188 @@
+:root {
+  color-scheme: dark;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  --bg: #0b1220;
+  --panel: #121a2b;
+  --border: #2a3a5c;
+  --accent: #3dd6c6;
+  --accent2: #f4b942;
+  --text: #e8eefc;
+  --muted: #9fb0d0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at 20% 0%, #152238, var(--bg) 55%);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 360px 1fr 340px;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  padding: 12px;
+  min-height: 100vh;
+}
+
+header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  overflow: auto;
+}
+
+.panel h2 {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  color: var(--accent);
+}
+
+.field {
+  margin-bottom: 10px;
+}
+
+.field label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.field input[type="number"],
+.field select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0d1524;
+  color: var(--text);
+}
+
+.unit-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.unit-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.unit-card h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.params {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), #2a9d8f);
+  color: #041018;
+}
+
+.btn-secondary {
+  background: #1c2942;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.flow-wrap {
+  height: calc(100vh - 100px);
+  min-height: 520px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.react-flow__node {
+  border-radius: 10px !important;
+  border: 1px solid var(--border) !important;
+  background: #162033 !important;
+  color: var(--text) !important;
+  font-size: 12px;
+  min-width: 120px;
+}
+
+.react-flow__node.selected {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.react-flow__edge-path {
+  stroke: var(--accent2) !important;
+}
+
+.pool-node {
+  background: #1a263d !important;
+  border-color: var(--accent2) !important;
+}
+
+.metric {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.metric strong {
+  color: var(--text);
+}
+
+.chart-box {
+  height: 220px;
+}
+
+.error {
+  color: #ff8b8b;
+  font-size: 0.85rem;
+}
