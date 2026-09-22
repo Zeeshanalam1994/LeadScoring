@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ReactFlowProvider, useReactFlow, useNodesState, useEdgesState } from "@xyflow/react";
+import {
+  ReactFlowProvider,
+  useReactFlow,
+  useNodesState,
+  useEdgesState,
+  addEdge,
+  type Connection,
+  type Node,
+} from "@xyflow/react";
 import {
   Bar,
   BarChart,
@@ -14,6 +22,7 @@ import { ObjectPalette } from "./components/ObjectPalette";
 import { StreamTable } from "./components/StreamTable";
 import { applySimulationToPfd } from "./pfd/applySimulation";
 import { buildInitialPfd } from "./pfd/buildPfd";
+import { seedTagCountersFromNodes } from "./pfd/paletteDnD";
 import type { HeaterConfig, RefineryConfig, SimulationResult, UnitId, UnitNode } from "./types";
 
 const UNIT_LABELS: Record<UnitId, string> = {
@@ -43,6 +52,7 @@ type ConfigTab = "feeders" | "units" | "reactors" | "heaters" | "blenders";
 type BottomTab = "streams" | "energy" | "results";
 
 const { nodes: initialNodes, edges: initialEdges } = buildInitialPfd();
+seedTagCountersFromNodes(initialNodes);
 
 function SimulationWorkspace() {
   const { setCenter } = useReactFlow();
@@ -102,6 +112,37 @@ function SimulationWorkspace() {
     () => result?.pools.map((p) => ({ name: p.pool.toUpperCase(), mt_h: Math.round(p.total_mt_h) })) ?? [],
     [result],
   );
+
+  const onNodeAdded = useCallback(
+    (node: Node) => {
+      setNodes((nds) => [...nds, node]);
+    },
+    [setNodes],
+  );
+
+  const onConnectStreams = useCallback(
+    (connection: Connection) => {
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...connection,
+            type: "stream",
+            id: `e_user_${connection.source}_${connection.target}_${Date.now().toString(36)}`,
+            data: { streamName: "New Stream", phase: "liquid" },
+          },
+          eds,
+        ),
+      );
+    },
+    [setEdges],
+  );
+
+  const removeSelectedNode = () => {
+    if (!selectedNodeId?.startsWith("usr_")) return;
+    setNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
+    setEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
+    setSelectedNodeId(null);
+  };
 
   const focusNode = (id: string) => {
     const node = nodes.find((n) => n.id === id);
@@ -187,6 +228,8 @@ function SimulationWorkspace() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onSelectNode={setSelectedNodeId}
+            onNodeAdded={onNodeAdded}
+            onConnectStreams={onConnectStreams}
             solving={loading}
           />
         </div>
@@ -195,6 +238,11 @@ function SimulationWorkspace() {
           <div className="workbook-header">Workbook — Properties</div>
           <div className="props-tree">
             Selected: <span className="sel">{selectedNodeId ?? "—"}</span>
+            {selectedNodeId?.startsWith("usr_") && (
+              <button type="button" className="btn btn-secondary" style={{ marginLeft: 8 }} onClick={removeSelectedNode}>
+                Delete
+              </button>
+            )}
           </div>
           <div className="workbook-tabs">
             {(["feeders", "units", "reactors", "heaters", "blenders"] as ConfigTab[]).map((t) => (

@@ -1,47 +1,67 @@
 import { EquipmentIcon } from "../pfd/icons";
-import type { EquipmentKind } from "../pfd/types";
-
-const PALETTE_ITEMS: { kind: EquipmentKind; label: string; hint: string }[] = [
-  { kind: "feeder", label: "Material Stream", hint: "Crude / assay feed" },
-  { kind: "column", label: "Distillation", hint: "CDU / VDU / Frac" },
-  { kind: "heater", label: "Heater / Furnace", hint: "Fired & process" },
-  { kind: "reactor", label: "Reactor", hint: "Riser / CCR / Reform" },
-  { kind: "converter", label: "Conversion", hint: "FCC / HC / Coker" },
-  { kind: "tank", label: "Tank / Pool", hint: "Product inventory" },
-  { kind: "blender", label: "Mixer / Blender", hint: "Spec blending" },
-];
+import {
+  PALETTE_DND_MIME,
+  PALETTE_TEMPLATES,
+  encodePaletteDrag,
+  type PaletteTemplate,
+} from "../pfd/paletteDnD";
 
 interface ObjectPaletteProps {
   selectedNodeId: string | null;
   onFocus: (nodeId: string) => void;
 }
 
-const FOCUS_MAP: Record<string, string> = {
-  feeder: "feeder",
-  column: "CDU",
+const FOCUS_MAP: Partial<Record<string, string>> = {
+  stream: "feeder",
+  cdu: "CDU",
+  vdu: "VDU",
   heater: "h_CDU",
-  reactor: "fcc_riser",
-  converter: "HYDROCRACKER",
+  fcc_riser: "fcc_riser",
+  fcc_regen: "fcc_regen",
+  fcc_frac: "FCC",
+  hc: "HYDROCRACKER",
+  coker: "COKER",
+  ccr: "CCR",
   tank: "pool_gasoline",
   blender: "blend_gas",
 };
+
+function onDragStart(e: React.DragEvent, template: PaletteTemplate) {
+  e.dataTransfer.setData(PALETTE_DND_MIME, encodePaletteDrag(template.id));
+  e.dataTransfer.effectAllowed = "move";
+}
 
 export function ObjectPalette({ selectedNodeId, onFocus }: ObjectPaletteProps) {
   return (
     <div className="object-palette">
       <div className="palette-title">Object Palette</div>
-      <div className="palette-grid">
-        {PALETTE_ITEMS.map((item) => (
-          <button
-            key={item.kind}
-            type="button"
-            className={`palette-item ${FOCUS_MAP[item.kind] === selectedNodeId ? "active" : ""}`}
-            title={item.hint}
-            onClick={() => onFocus(FOCUS_MAP[item.kind])}
+      <p className="palette-hint">Drag onto PFD to add</p>
+      <div className="palette-grid palette-grid-scroll">
+        {PALETTE_TEMPLATES.map((item) => (
+          <div
+            key={item.id}
+            role="button"
+            tabIndex={0}
+            draggable
+            className={`palette-item palette-draggable ${
+              FOCUS_MAP[item.id] === selectedNodeId ? "active" : ""
+            }`}
+            title={`${item.hint} — drag to PFD`}
+            onDragStart={(e) => onDragStart(e, item)}
+            onClick={() => {
+              const target = FOCUS_MAP[item.id];
+              if (target) onFocus(target);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                const target = FOCUS_MAP[item.id];
+                if (target) onFocus(target);
+              }
+            }}
           >
-            <EquipmentIcon kind={item.kind} size={28} />
+            <EquipmentIcon kind={item.kind} size={26} />
             <span>{item.label}</span>
-          </button>
+          </div>
         ))}
       </div>
     </div>

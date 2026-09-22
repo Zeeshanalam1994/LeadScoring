@@ -24,6 +24,15 @@ export function applySimulationToPfd(
       return { ...n, data: d };
     }
 
+    const uid = d.unitId as UnitId | undefined;
+    if (uid && UNIT_IDS.includes(uid)) {
+      const ur = unitMap.get(uid);
+      if (ur) {
+        d.subtitle = `${ur.feed_mt_h.toFixed(0)} MT/h · ${(ur.utilisation * 100).toFixed(0)}% cap`;
+      }
+      return { ...n, data: d };
+    }
+
     const hr = result.heaters.find((h) => `h_${h.unit_id}` === n.id);
     if (hr) {
       d.subtitle = `${hr.duty_mw.toFixed(1)} MW fired`;
