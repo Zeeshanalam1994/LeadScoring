@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Plantwide Dynamic RTO | IOCL Executive Briefing</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+
+      <!-- 1 Title -->
+      <section class="center-slide" data-background-gradient="linear-gradient(160deg, #0a1628, #003da5 40%, #1a1a2e)">
+        <span class="tag">Executive briefing · Confidential</span>
+        <h1>From Local RTO Silos to<br/><span class="accent">Plantwide Dynamic Optimization</span></h1>
+        <p class="subtitle">Why Honeywell PWO + HPDT belong in every IOCL Honeywell Template</p>
+        <div class="logo-strip">
+          <span class="logo-text iocl">INDIAN OIL</span>
+          <span style="opacity:0.4">×</span>
+          <span class="logo-text hw">HONEYWELL FORGE</span>
+        </div>
+        <p style="font-size:0.5em; margin-top:2rem; color:#94a3b8">Refining &amp; Petrochemicals · Digital Optimization Strategy</p>
+      </section>
+
+      <!-- 2 Agenda -->
+      <section>
+        <h2>What we will cover</h2>
+        <div class="hero-grid">
+          <ul class="exec-list">
+            <li class="fragment">The profit gap between planning and the control room</li>
+            <li class="fragment">Why traditional / unit-local RTO under-delivers at IOCL scale</li>
+            <li class="fragment">Honeywell Plantwide Optimizer — Dynamic RTO architecture</li>
+            <li class="fragment">Honeywell Process Digital Twin (HPDT) — model integrity at scale</li>
+            <li class="fragment">Template standard: end-to-end autonomous optimization stack</li>
+            <li class="fragment">Investment logic &amp; recommended path for IOCL</li>
+          </ul>
+          <div>
+            <div class="stat-card fragment" style="animation-delay:0.2s">
+              <div class="num">90%</div>
+              <div class="label">of refinery operating time is <strong>not</strong> steady state — yet legacy RTO optimizes as if it were</div>
+            </div>
+            <div class="stat-card fragment" style="margin-top:1rem; animation-delay:0.4s">
+              <div class="num">1→n</div>
+              <div class="label">PWO coordinates the whole site through one dynamic optimization layer</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3 Challenge -->
+      <section>
+        <h2>IOCL’s optimization challenge is <span class="accent">enterprise-scale</span></h2>
+        <p style="font-size:0.65em; color:#94a3b8">Multiple refineries · complex molecule management · volatile margins · sustainability targets</p>
+        <div class="pill-row fragment">
+          <span class="pill">LP / PIMS planning (hours–days)</span>
+          <span class="pill highlight">← GAP →</span>
+          <span class="pill">Unit APC (minutes)</span>
+          <span class="pill">Local RTO per unit (2–4 hr cycle)</span>
+        </div>
+        <svg class="arch-diagram fragment" viewBox="0 0 800 200" style="margin-top:1rem">
+          <rect class="layer-box" x="40" y="60" width="140" height="80"/>
+          <text class="layer-label" x="110" y="95" text-anchor="middle">Business LP</text>
+          <text class="layer-sublabel" x="110" y="115" text-anchor="middle">Weekly plan</text>
+          <line class="flow-line" x1="180" y1="100" x2="280" y2="100"/>
+          <rect class="layer-box" x="280" y="40" width="160" height="120" opacity="0.5"/>
+          <text class="layer-label" x="360" y="85" text-anchor="middle" fill="#ff8a9b">Disconnected</text>
+          <text class="layer-sublabel" x="360" y="105" text-anchor="middle">Local RTO islands</text>
+          <text class="layer-sublabel" x="360" y="125" text-anchor="middle">Duplicate models</text>
+          <line class="flow-line" x1="440" y1="100" x2="540" y2="100"/>
+          <rect class="layer-box" x="540" y="60" width="140" height="80"/>
+          <text class="layer-label" x="610" y="95" text-anchor="middle">DCS / APC</text>
+          <text class="layer-sublabel" x="610" y="115" text-anchor="middle">Real time</text>
+          <text class="layer-label" x="400" y="175" text-anchor="middle" fill="#f47920">Result: giveaway, off-spec during moves, planner vs operator mismatch</text>
+        </svg>
+      </section>
+
+      <!-- 4 Traditional RTO -->
+      <section>
+        <h2>Traditional steady-state RTO — how it was built to work</h2>
+        <div class="two-col">
+          <div>
+            <ul class="exec-list">
+              <li class="fragment">Large first-principles or rigorous simulation model per unit</li>
+              <li class="fragment">Solve economic optimum assuming <strong>steady state</strong></li>
+              <li class="fragment">Execute every 2–4 hours; push setpoints / bounds to MPC</li>
+              <li class="fragment">Separate model team, separate APC team, separate planner</li>
+            </ul>
+          </div>
+          <div class="card-old fragment">
+            <strong style="color:#ff8a9b">Designed for the 1990s operating model</strong>
+            <p style="font-size:0.9em; margin-top:0.75rem">When plants ran longer on stable feeds and optimization was a periodic advisory layer — not continuous profit execution.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5 Local RTO waste -->
+      <section data-background-color="#1a0a12">
+        <h2>Unit-local RTO at IOCL: <span class="accent-red">diminishing returns</span></h2>
+        <table class="compare-table fragment">
+          <thead>
+            <tr>
+              <th>Typical local RTO reality</th>
+              <th>Business impact</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="bad"><td><span class="icon-bad"></span>Duplicate steady-state models (RTO + APC + LP)</td><td>3× engineering &amp; maintenance cost</td></tr>
+            <tr class="bad"><td><span class="icon-bad"></span>Optimizes one unit, ignores site balances</td><td>FCC vs hydrocracker vs blend pool conflicts</td></tr>
+            <tr class="bad"><td><span class="icon-bad"></span>Inactive during transients &amp; grade changes</td><td>Off-spec &amp; quality giveaway on 90% of clock time</td></tr>
+            <tr class="bad"><td><span class="icon-bad"></span>18–24 month projects, specialist retention</td><td>Benefits erode before payback completes</td></tr>
+            <tr class="bad"><td><span class="icon-bad"></span>Often “off” in operations</td><td>Sunk CAPEX with no sustained margin lift</td></tr>
+          </tbody>
+        </table>
+        <p class="fragment" style="font-size:0.6em; margin-top:1rem"><strong>Executive view:</strong> Adding another local RTO license without plantwide coordination is optimization <em>spend</em>, not optimization <em>strategy</em>.</p>
+      </section>
+
+      <!-- 6 TCO -->
+      <section>
+        <h2>Total cost of ownership: local RTO vs PWO stack</h2>
+        <p style="font-size:0.55em; color:#94a3b8">Illustrative relative index — normalized to 100 for traditional per-unit RTO program</p>
+        <div class="two-col" style="margin-top:1rem">
+          <div>
+            <p style="font-size:0.6em">Traditional local RTO (per major unit)</p>
+            <div class="waste-meter fragment" data-meter="local"><div class="fill-local" data-target="100"></div></div>
+            <ul style="font-size:0.5em; margin-top:0.5rem">
+              <li>Rigorous model build &amp; validation</li>
+              <li>Ongoing model mismatch with APC</li>
+              <li>Limited cross-unit coordination</li>
+            </ul>
+          </div>
+          <div>
+            <p style="font-size:0.6em">PWO dynamic layer (site scope)</p>
+            <div class="waste-meter fragment" data-meter="pwo"><div class="fill-pwo" data-target="35"></div></div>
+            <ul style="font-size:0.5em; margin-top:0.5rem">
+              <li>Reuses APC dynamics &amp; planning yield structure</li>
+              <li>Proxy limits — no duplicate constraint models</li>
+              <li>One coordinated optimization narrative for operations</li>
+            </ul>
+          </div>
+        </div>
+        <p class="fragment" style="font-size:0.58em; margin-top:1.25rem">Honeywell case evidence: dynamic optimization delivers traditional RTO economics with <strong class="accent">dramatically lower modeling effort</strong> (Profit Optimizer / PWO family).</p>
+      </section>
+
+      <!-- 7 Dynamic RTO intro -->
+      <section class="center-slide" data-background-gradient="linear-gradient(135deg, #0f2744, #e60028 120%)">
+        <span class="tag">Hydrocarbon Processing 2022 — Best Automation Technology</span>
+        <h1 style="font-size:2em">Honeywell Plantwide Optimizer</h1>
+        <p class="subtitle">Dynamic Real-Time Optimization — not a bigger steady-state model, a <strong>different control architecture</strong></p>
+        <div class="pill-row" style="justify-content:center">
+          <span class="pill highlight">Runs ~every minute</span>
+          <span class="pill highlight">Dynamic models</span>
+          <span class="pill highlight">Planning-aligned economics</span>
+          <span class="pill highlight">Always feasible via proxy limits</span>
+        </div>
+      </section>
+
+      <!-- 8 Architecture -->
+      <section>
+        <h2>PWO architecture: 1 primary MPC → <span class="accent">n</span> unit APCs</h2>
+        <svg class="arch-diagram" viewBox="0 0 820 380">
+          <defs>
+            <linearGradient id="pwoGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" style="stop-color:#e60028"/>
+              <stop offset="100%" style="stop-color:#f47920"/>
+            </linearGradient>
+          </defs>
+          <rect x="260" y="20" width="300" height="70" rx="12" fill="url(#pwoGrad)" opacity="0.85"/>
+          <text class="layer-label" x="410" y="48" text-anchor="middle" font-size="16">PLANTWIDE OPTIMIZER (Dynamic RTO)</text>
+          <text class="layer-sublabel" x="410" y="68" text-anchor="middle">Planning yield model · site balances · inventories · quality</text>
+          <line class="flow-line" x1="410" y1="90" x2="410" y2="130"/>
+          <line class="flow-line" x1="410" y1="130" x2="150" y2="180"/>
+          <line class="flow-line" x1="410" y1="130" x2="410" y2="180"/>
+          <line class="flow-line" x1="410" y1="130" x2="670" y2="180"/>
+          <rect class="layer-box" x="60" y="180" width="180" height="90"/>
+          <text class="layer-label" x="150" y="215" text-anchor="middle">CDU / VDU APC</text>
+          <text class="layer-sublabel" x="150" y="235" text-anchor="middle">Proxy limits ↑</text>
+          <rect class="layer-box" x="320" y="180" width="180" height="90"/>
+          <text class="layer-label" x="410" y="215" text-anchor="middle">FCC / Coker APC</text>
+          <text class="layer-sublabel" x="410" y="235" text-anchor="middle">Proxy limits ↑</text>
+          <rect class="layer-box" x="580" y="180" width="180" height="90"/>
+          <text class="layer-label" x="670" y="215" text-anchor="middle">Hydro / Reforming</text>
+          <text class="layer-sublabel" x="670" y="235" text-anchor="middle">Proxy limits ↑</text>
+          <line class="flow-line" x1="150" y1="270" x2="150" y2="300"/>
+          <line class="flow-line" x1="410" y1="270" x2="410" y2="300"/>
+          <line class="flow-line" x1="670" y1="270" x2="670" y2="300"/>
+          <rect class="layer-box" x="200" y="300" width="420" height="60"/>
+          <text class="layer-label" x="410" y="335" text-anchor="middle">DCS · Blend Optimizer · Analyzers</text>
+          <rect x="40" y="20" width="160" height="55" rx="8" fill="rgba(0,61,165,0.4)" stroke="#003da5"/>
+          <text class="layer-label" x="120" y="42" text-anchor="middle" font-size="12">LP / PIMS</text>
+          <text class="layer-sublabel" x="120" y="58" text-anchor="middle">Economics &amp; yields</text>
+          <path class="flow-line" d="M 200 47 L 260 55" fill="none"/>
+        </svg>
+        <p style="font-size:0.55em">PWO inherits the <strong>planner’s structure</strong> while APC retains <strong>constraint fidelity</strong> — no need to replicate every valve in the site optimizer.</p>
+      </section>
+
+      <!-- 9 Dynamic vs steady -->
+      <section>
+        <h2>Dynamic RTO vs traditional RTO</h2>
+        <div class="versus fragment">
+          <div class="card-old">
+            <h3 style="font-size:1.1em; color:#ff8a9b">Traditional RTO</h3>
+            <ul style="font-size:0.95em">
+              <li>Wait for steady state</li>
+              <li>2–4 hour execution cycle</li>
+              <li>Steady-state simulation core</li>
+              <li>Per-unit scope</li>
+              <li>Heavy model maintenance</li>
+            </ul>
+          </div>
+          <div class="vs">VS</div>
+          <div class="card-new">
+            <h3 style="font-size:1.1em; color:#7dffc8">PWO Dynamic RTO</h3>
+            <ul style="font-size:0.95em">
+              <li>Optimize during moves &amp; disturbances</li>
+              <li>~1 minute coordination cycle</li>
+              <li>Leverages live APC dynamic models</li>
+              <li>Full site / train scope</li>
+              <li>Gain matrix from plan + history</li>
+            </ul>
+          </div>
+        </div>
+        <p class="fragment" style="font-size:0.58em; margin-top:1.5rem">Industry studies on dynamic vs steady RTO: measurably higher throughput and <strong>~50% reduction in off-spec</strong> during transients (literature &amp; Honeywell deployments).</p>
+      </section>
+
+      <!-- 10 Proxy limits -->
+      <section>
+        <h2>Patented proxy limits — feasibility without model bloat</h2>
+        <div class="hero-grid">
+          <ul class="exec-list">
+            <li class="fragment">APC calculates feasible operating envelope on demand</li>
+            <li class="fragment">PWO sees aggregated limits — not thousands of inner constraints</li>
+            <li class="fragment">APC model updates automatically flow to optimization</li>
+            <li class="fragment">Smaller problem → faster solve → operator-trusted moves</li>
+          </ul>
+          <svg viewBox="0 0 320 280" class="fragment">
+            <circle cx="160" cy="140" r="100" fill="none" stroke="rgba(244,121,32,0.3)" stroke-width="2" class="clock-anim"/>
+            <circle cx="160" cy="140" r="70" fill="rgba(0,61,165,0.3)" stroke="#003da5"/>
+            <text x="160" y="135" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">PWO</text>
+            <text x="160" y="155" text-anchor="middle" fill="#94a3b8" font-size="10">Site objective</text>
+            <circle cx="160" cy="50" r="28" fill="rgba(0,200,150,0.25)" stroke="#00c896"/>
+            <text x="160" y="54" text-anchor="middle" fill="#fff" font-size="9">APC</text>
+            <circle cx="70" cy="200" r="28" fill="rgba(0,200,150,0.25)" stroke="#00c896"/>
+            <text x="70" y="204" text-anchor="middle" fill="#fff" font-size="9">APC</text>
+            <circle cx="250" cy="200" r="28" fill="rgba(0,200,150,0.25)" stroke="#00c896"/>
+            <text x="250" y="204" text-anchor="middle" fill="#fff" font-size="9">APC</text>
+            <line x1="160" y1="78" x2="160" y2="110" stroke="#f47920" stroke-width="2" stroke-dasharray="4 3">
+              <animate attributeName="stroke-dashoffset" from="0" to="-14" dur="0.8s" repeatCount="indefinite"/>
+            </line>
+          </svg>
+        </div>
+      </section>
+
+      <!-- 11 HPDT -->
+      <section data-background-gradient="linear-gradient(180deg, #0a1628, #122a4a)">
+        <h2>Honeywell Process Digital Twin <span class="accent">(HPDT)</span></h2>
+        <p style="font-size:0.62em; color:#94a3b8">The missing layer that keeps planning, optimization, and reality aligned</p>
+        <div class="two-col" style="margin-top:1rem">
+          <ul class="exec-list">
+            <li class="fragment">Online simulation &amp; scenario workspace tied to live plant data</li>
+            <li class="fragment">Validates yield vectors and constraints before they enter PWO</li>
+            <li class="fragment">Supports APC model lifecycle (what-if, debottleneck, training)</li>
+            <li class="fragment">Closes the loop: LP assumptions ↔ actual unit capability</li>
+          </ul>
+          <div class="stat-card fragment">
+            <div class="num" style="font-size:1.6em">HPDT + PWO</div>
+            <div class="label" style="margin-top:0.75rem">
+              <strong>Digital twin</strong> = trusted model estate<br/>
+              <strong>PWO</strong> = continuous profit execution<br/>
+              Together they replace ad-hoc RTO rebuilds every turnaround.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 12 Honeywell Template -->
+      <section>
+        <h2>Must-have in the <span class="accent">Honeywell Template</span> for IOCL</h2>
+        <p style="font-size:0.58em">Standardize the full stack — not à la carte APC projects</p>
+        <div class="timeline fragment">
+          <div class="step"><div class="dot"></div>Experion / DCS</div>
+          <div class="step"><div class="dot"></div>Forge APC</div>
+          <div class="step"><div class="dot" style="border-color:#e60028"></div><strong>PWO</strong></div>
+          <div class="step"><div class="dot" style="border-color:#00c896"></div><strong>HPDT</strong></div>
+          <div class="step"><div class="dot"></div>Blend Opt</div>
+          <div class="step"><div class="dot"></div>CPA-U / Forge</div>
+        </div>
+        <table class="compare-table fragment" style="margin-top:2rem">
+          <thead><tr><th>Template component</th><th>Role</th><th>Without it</th></tr></thead>
+          <tbody>
+            <tr><td>Unit APC (Forge)</td><td>Constraint control &amp; dynamic models</td><td>PWO has nothing to coordinate</td></tr>
+            <tr class="good"><td><strong>PWO</strong></td><td>Site dynamic RTO</td><td>Local RTO silos &amp; planner gap return</td></tr>
+            <tr class="good"><td><strong>HPDT</strong></td><td>Model governance &amp; scenarios</td><td>Stale yields, failed RTO revamps</td></tr>
+            <tr><td>Blend Optimizer</td><td>Gate-to-gate quality &amp; inventory</td><td>Upstream optimization lost at rundown</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- 13 Proof points -->
+      <section>
+        <h2>Proven in refining — relevant to IOCL complexity</h2>
+        <div class="hero-grid">
+          <div>
+            <div class="stat-card fragment">
+              <strong>Hellenic Petroleum</strong>
+              <p style="font-size:0.85em; margin:0.5rem 0 0">Profit Optimizer / dynamic coordination across units — payback &lt; 1 year cited; benzene &amp; margin improvements.</p>
+            </div>
+            <div class="stat-card fragment" style="margin-top:1rem">
+              <strong>SECCO (ethylene complex)</strong>
+              <p style="font-size:0.85em; margin:0.5rem 0 0">No separate steady-state RTO models — reuses Profit Controller dynamics; naphtha feed +1.27% after revamp.</p>
+            </div>
+          </div>
+          <div>
+            <div class="stat-card fragment">
+              <strong>Literature (FCC DRTO)</strong>
+              <p style="font-size:0.85em; margin:0.5rem 0 0">Dynamic optimization vs steady RTO: higher LPG/gasoline objective during disturbances — IOCL FCC trains are prime candidates.</p>
+            </div>
+            <div class="stat-card fragment" style="margin-top:1rem">
+              <strong>IOCL opportunity</strong>
+              <p style="font-size:0.85em; margin:0.5rem 0 0">Pan-India refining system: coordinate crude mix, intermediate pools, and product blend across units once — not per-unit RTO battles.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 14 IOCL value -->
+      <section class="center-slide">
+        <h2>What IOCL gains with PWO + HPDT</h2>
+        <div class="pill-row" style="justify-content:center; margin-top:1.5rem">
+          <span class="pill highlight fragment">₹ margin per barrel — sustained</span>
+          <span class="pill highlight fragment">Reduced quality giveaway</span>
+          <span class="pill highlight fragment">Faster response to crude / margin shifts</span>
+          <span class="pill highlight fragment">Lower optimization OPEX</span>
+          <span class="pill highlight fragment">Standard Honeywell delivery playbook</span>
+        </div>
+        <p class="fragment" style="font-size:0.65em; max-width:720px; margin:2rem auto 0; text-align:center">
+          Replace <em>multiple</em> local RTO capital requests with <strong>one</strong> template-based plantwide program per refinery — integrated with existing Forge APC investments.
+        </p>
+      </section>
+
+      <!-- 15 Decision -->
+      <section data-background-color="#0f172a">
+        <h2>Executive decision framework</h2>
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th>Option A — Continue local RTO proliferation</th>
+              <th>Option B — Honeywell Template (PWO + HPDT)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="bad"><td>High CAPEX per unit, overlapping models</td><td class="icon-good">Single site optimization layer</td></tr>
+            <tr class="bad"><td>Benefits isolated to one train</td><td class="icon-good">Crude-to-blend coordination</td></tr>
+            <tr class="bad"><td>Frequent “model off” status</td><td class="icon-good">Proxy limits + CPA-U sustainment</td></tr>
+            <tr class="bad"><td>Planner ↔ operations friction</td><td class="icon-good">LP structure executed in real time</td></tr>
+          </tbody>
+        </table>
+        <div class="cta-box fragment">
+          <strong>Recommendation:</strong> Mandate <span class="accent">PWO</span> and <span class="accent">HPDT</span> as non-optional modules in IOCL Honeywell Templates.<br/>
+          <span style="font-size:0.85em; color:#94a3b8">Defer or retire standalone local RTO expansions unless required by legacy license — route investment to plantwide dynamic optimization.</span>
+        </div>
+      </section>
+
+      <!-- 16 Roadmap -->
+      <section>
+        <h2>Proposed IOCL rollout (template-based)</h2>
+        <div class="timeline">
+          <div class="step fragment"><div class="dot"></div>Phase 1<br/><small>APC baseline + CPA-U</small></div>
+          <div class="step fragment"><div class="dot"></div>Phase 2<br/><small>HPDT model alignment</small></div>
+          <div class="step fragment"><div class="dot" style="border-color:#e60028"></div>Phase 3<br/><small>PWO live — 1 refinery</small></div>
+          <div class="step fragment"><div class="dot"></div>Phase 4<br/><small>Blend + gate-to-gate</small></div>
+          <div class="step fragment"><div class="dot" style="border-color:#00c896"></div>Phase 5<br/><small>Replicate template nationally</small></div>
+        </div>
+        <p class="fragment" style="font-size:0.58em; margin-top:2rem">Pilot refinery selection: highest intermediate-pool complexity + existing Forge APC footprint = fastest time-to-value.</p>
+      </section>
+
+      <!-- 17 Close -->
+      <section class="center-slide" data-background-gradient="linear-gradient(160deg, #003da5, #0a1628 50%, #e60028 150%)">
+        <h1 style="font-size:1.9em">Optimize the <span class="accent">plant</span>, not the project portfolio</h1>
+        <p class="subtitle">Plantwide Dynamic RTO · Honeywell PWO · HPDT in every IOCL template</p>
+        <div class="logo-strip fragment">
+          <span class="logo-text iocl">INDIAN OIL</span>
+          <span class="logo-text hw">HONEYWELL</span>
+        </div>
+        <p style="font-size:0.5em; margin-top:2.5rem; color:#94a3b8">Questions &amp; workshop scheduling · Honeywell Process Solutions</p>
+      </section>
+
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+  <script>
+    Reveal.initialize({
+      hash: true,
+      slideNumber: 'c/t',
+      transition: 'slide',
+      transitionSpeed: 'default',
+      backgroundTransition: 'fade',
+      width: 1280,
+      height: 720,
+      margin: 0.08,
+      autoAnimateEasing: 'ease-out',
+      autoAnimateDuration: 0.8
+    });
+
+    Reveal.on('slidechanged', event => {
+      const meters = event.currentSlide.querySelectorAll('[data-meter]');
+      meters.forEach(m => {
+        const fill = m.querySelector('[data-target]');
+        if (fill) fill.style.width = fill.dataset.target + '%';
+      });
+    });
+
+    Reveal.on('ready', () => {
+      const first = Reveal.getCurrentSlide();
+      if (first) {
+        first.querySelectorAll('[data-target]').forEach(fill => {
+          setTimeout(() => { fill.style.width = fill.dataset.target + '%'; }, 600);
+        });
+      }
+    });
+  </script>
+</body>
+</html>
