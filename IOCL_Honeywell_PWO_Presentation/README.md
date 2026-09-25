@@ -8,7 +8,8 @@ Executive-level HTML presentation (Reveal.js) with animations, architecture grap
 |------|---------|
 | `index.html` | Full animated deck (17 slides) — **primary deliverable** |
 | `styles.css` | IOCL / Honeywell branding, animations |
-| `IOCL_Honeywell_PWO_Executive.pptx` | Short executive summary (6 slides) for email / offline edit |
+| **`IOCL_Honeywell_PWO_Executive.pptx`** | **Full 17-slide PowerPoint** (primary PPT deliverable) |
+| `build_pptx.py` | Regenerate the `.pptx` after editing slide content |
 
 ## View the presentation
 
