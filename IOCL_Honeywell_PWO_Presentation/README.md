@@ -2,6 +2,14 @@
 
 Executive-level HTML presentation (Reveal.js) with animations, architecture graphics, and IOCL-focused messaging.
 
+## Files
+
+| File | Purpose |
+|------|---------|
+| `index.html` | Full animated deck (17 slides) — **primary deliverable** |
+| `styles.css` | IOCL / Honeywell branding, animations |
+| `IOCL_Honeywell_PWO_Executive.pptx` | Short executive summary (6 slides) for email / offline edit |
+
 ## View the presentation
 
 ### Option 1: Local browser (recommended)
